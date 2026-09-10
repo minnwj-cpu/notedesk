@@ -14,6 +14,22 @@ r"""
 """
 import hashlib, io, json, re, shutil, sys
 from pathlib import Path
+import time
+
+PRODUCED = set()   # 이번 빌드가 만든 파일 — 끝에 나머지(옛 파일)만 지운다. 폴더는 지우지 않는다
+
+def write(path, data):
+    """파일만 덮어쓴다. Windows 에서 폴더 삭제가 거부되는 일(탐색기·서버가 잡고 있을 때)을 피한다."""
+    path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+    for i in range(6):
+        try:
+            if isinstance(data, str): path.write_bytes(data.encode("utf-8"))
+            else: path.write_bytes(data)
+            break
+        except PermissionError:
+            if i == 5: raise
+            time.sleep(.3)
+    PRODUCED.add(path.resolve())
 
 sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parent
@@ -114,13 +130,13 @@ def build_app(a):
     s = s.replace("let downloads=null;", "let downloads=window.__stdDownloads||null;")
     out = DOCS / a["dir"]
     out.mkdir(parents=True, exist_ok=True)
-    io.open(out / "index.html", "w", encoding="utf-8", newline="\n").write(head(a["name"], a["color"], "../sw.js") + s + "\n</body></html>\n")
+    write(out / "index.html", head(a["name"], a["color"], "../sw.js") + s + "\n</body></html>\n")
     manifest = dict(name=a["name"], short_name=a["name"], description=a["desc"], lang="ko",
                     start_url="./", scope="./", display="standalone", orientation="any",
                     background_color="#faf9f5", theme_color=a["color"],
                     icons=[dict(src="icon-192.png", sizes="192x192", type="image/png"),
                            dict(src="icon-512.png", sizes="512x512", type="image/png", purpose="any maskable")])
-    io.open(out / "manifest.webmanifest", "w", encoding="utf-8").write(json.dumps(manifest, ensure_ascii=False, indent=1))
+    write(out / "manifest.webmanifest", json.dumps(manifest, ensure_ascii=False, indent=1))
     make_icons(out, a)
     return stamp_of(s)
 
@@ -139,7 +155,8 @@ def make_icons(out, a):
         lb = a["name"]
         bb = d.textbbox((0, 0), lb, font=small)
         d.text(((size - (bb[2] - bb[0])) / 2 - bb[0], size * .78 + (size * .22 - (bb[3] - bb[1])) / 2 - bb[1]), lb, font=small, fill="#FFFFFF")
-        im.convert("RGB").save(out / f"icon-{size}.png", optimize=True)
+        buf = io.BytesIO(); im.convert("RGB").save(buf, format="PNG", optimize=True)
+        write(out / f"icon-{size}.png", buf.getvalue())
 
 def _mix(c1, c2, t):
     a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]; b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
@@ -216,19 +233,14 @@ async function cacheFirst(req){
 """
 
 def main():
-    if DOCS.exists():
-        for p in DOCS.iterdir():
-            if p.name == ".nojekyll": continue
-            shutil.rmtree(p) if p.is_dir() else p.unlink()
     DOCS.mkdir(exist_ok=True)
-    (DOCS / ".nojekyll").write_text("")          # GitHub Pages 가 파일을 손대지 않게
-    (DOCS / "vendor").mkdir()
-    shutil.copy(VENDOR / "jszip.min.js", DOCS / "vendor" / "jszip.min.js")
+    write(DOCS / ".nojekyll", "")                       # GitHub Pages 가 파일을 손대지 않게
+    write(DOCS / "vendor" / "jszip.min.js", (VENDOR / "jszip.min.js").read_bytes())
     stamps = {}
     for a in APPS:
         stamps[a["dir"]] = build_app(a)
         print(f"  {a['name']:5s} {a['dir']:8s} {stamps[a['dir']]}")
-    io.open(DOCS / "index.html", "w", encoding="utf-8", newline="\n").write(launcher(stamps))
+    write(DOCS / "index.html", launcher(stamps))
     # 서비스워커: 껍데기 목록 + 내용 해시로 판 번호
     shell = ["./", "./index.html", "./vendor/jszip.min.js", "./sangdam/icon-180.png", "./sangdam/icon-192.png"]
     for a in APPS:
@@ -236,11 +248,20 @@ def main():
         shell += [f"./{d}/", f"./{d}/index.html", f"./{d}/manifest.webmanifest", f"./{d}/icon-180.png", f"./{d}/icon-192.png", f"./{d}/icon-512.png"]
     shell = sorted(set(shell), key=shell.index)
     h = hashlib.sha1()
-    for p in sorted(DOCS.rglob("*")):
-        if p.is_file() and p.name != "sw.js": h.update(p.relative_to(DOCS).as_posix().encode()); h.update(p.read_bytes())
+    for p in sorted(PRODUCED):
+        h.update(p.relative_to(DOCS.resolve()).as_posix().encode()); h.update(p.read_bytes())
     v = "notedesk-" + h.hexdigest()[:10]
-    io.open(DOCS / "sw.js", "w", encoding="utf-8", newline="\n").write(SW_JS.replace("__V__", v).replace("__SHELL__", json.dumps(shell, ensure_ascii=False)))
-    print(f"  sw.js {v} · 껍데기 {len(shell)}개")
+    write(DOCS / "sw.js", SW_JS.replace("__V__", v).replace("__SHELL__", json.dumps(shell, ensure_ascii=False)))
+    # 옛 파일 정리 — 이번에 안 만든 파일만 지운다. 폴더는 비어도 두어도 무방하니 실패해도 넘어간다
+    stale = [p for p in DOCS.rglob("*") if p.is_file() and p.resolve() not in PRODUCED]
+    for p in stale:
+        try: p.unlink()
+        except OSError as e: print(f"  (옛 파일을 못 지움: {p.name} — {e.strerror})")
+    for d in sorted((p for p in DOCS.rglob("*") if p.is_dir()), key=lambda x: -len(x.parts)):
+        try:
+            if not any(d.iterdir()): d.rmdir()
+        except OSError: pass
+    print(f"  sw.js {v} · 껍데기 {len(shell)}개" + (f" · 옛 파일 {len(stale)}개 정리" if stale else ""))
     print(f"빌드 끝 → {DOCS}")
     return stamps
 
