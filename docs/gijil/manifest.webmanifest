@@ -1,0 +1,25 @@
+{
+ "name": "기일노트",
+ "short_name": "기일노트",
+ "description": "법정 — 제출 기록 · 기일 노트 · 쟁점 · 숙제",
+ "lang": "ko",
+ "start_url": "./",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "any",
+ "background_color": "#faf9f5",
+ "theme_color": "#2C4E7A",
+ "icons": [
+  {
+   "src": "icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any maskable"
+  }
+ ]
+}
