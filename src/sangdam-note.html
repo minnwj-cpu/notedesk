@@ -114,6 +114,7 @@ button{cursor:pointer;background:none;border:none;padding:0}
 .empty p{margin:0;font-size:14px;max-width:44ch;line-height:1.65}
 
 /* 한눈에 */
+.ov{margin:0 0 10px;line-height:1.6;font-size:15px}.ov .n{display:inline-block;min-width:22px;color:var(--brand)}
 .meetgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .meetgrid .cell{padding:10px 14px;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
 .meetgrid .k{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute-2);font-weight:600}
@@ -353,7 +354,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.10b</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.14</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -655,6 +656,10 @@ function renderGlance(){
       .filter(x=>x[1]).map(x=>`<div class="cell"><div class="k">${x[0]}</div><div class="v">${esc(x[1])}</div></div>`).join("")+`</div>`;
   if((c.related||[]).length) h+=`<div class="related">${c.related.map(r=>`<span>${esc(r)}</span>`).join("")}</div>`;
   if(g.한줄) h+=`<div class="oneline">${linkify(g.한줄)}</div>`;
+  if((g.개요||[]).length){
+    h+=`<div class="sectionhd"><h2>개요</h2><span class="c">${g.개요.length}</span></div><div class="card"><div class="bd">`+
+      g.개요.map((x,i)=>`<p class="ov"><b class="n">${i+1}</b> ${linkify(x)}</p>`).join("")+`</div></div>`;
+  }
   if((g.숫자||[]).length){
     h+=`<div class="sectionhd"><h2>숫자</h2></div><div class="stats">`+
       g.숫자.map(x=>`<div class="stat ${x.warn?"warn":""}"><div class="k">${esc(x.k)}</div><div class="v">${esc(x.v)}</div>${x.sub?`<div class="s">${linkify(x.sub)}</div>`:""}${x.warn?`<div class="w">⚠ ${linkify(x.warn)}</div>`:""}</div>`).join("")+`</div>`;
@@ -1163,6 +1168,7 @@ function noteMarkdown(c,hl,recs){
   L.push(`# ${c.name||""}  상담노트`); L.push("");
   L.push(`- ${c.caseNo||"-"}`); (c.related||[]).forEach(r=>L.push(`- 관련 ${r}`));
   L.push(`- 상담 ${kdate(mt.date)} ${mt.time||""} ${mt.place||""} · ${mt.who||""} · ${mt.me||""}`.replace(/\s+/g," ").trim()); L.push("");
+  if((g.개요||[]).length){ L.push("## 개요"); L.push(""); g.개요.forEach((x,i)=>L.push(`${i+1}. ${x}`)); L.push(""); }
   if((g.결정||[]).length){ L.push("## 의뢰인이 정한 것"); L.push(""); g.결정.forEach((x,i)=>{ const st=S.checks["dec:"+i]||{}; L.push(`- **${x.q}** — ${st.memo||"(미정)"}`); }); L.push(""); }
   const decs=S.notes.filter(n=>n.dec); if(decs.length){ L.push("## 상담 중 정한 것"); L.push(""); decs.forEach(n=>L.push(`- ${n.tx}  (${hhmm(n.t)} ${n.who})`)); L.push(""); }
   if(qa.length){ L.push("## 질문과 답"); L.push(""); L.push("| # | 질문 | 물었음 | 의뢰인 답 | 비고 |"); L.push("|---|---|---|---|---|");
