@@ -404,7 +404,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.14</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.14b</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -416,6 +416,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
       <button class="btn ghost sm menuBtn" id="menuBtn">목록</button>
       <select id="caseSel" class="btn sm" style="max-width:190px" aria-label="사건 선택"></select>
       <button class="btn sm" id="openBtn">상담팩 열기</button>
+      <button class="btn ghost sm" id="delCaseBtn" title="이 사건의 팩·노트·녹음을 아이패드에서 지운다">사건 지우기</button>
       <button class="btn sm primary" id="exportBtn">내보내기</button>
     </div>
   </header>
@@ -649,6 +650,23 @@ async function loadCases(pick){
   await selectCase(target);
 }
 $("#caseSel").onchange=e=>selectCase(e.target.value);
+$("#delCaseBtn").onclick=()=>{ const id=S.caseId, c=S.cases[id]; if(!id||!c) return;
+  const nRec=S.notes.length;
+  modal({ title:"이 사건을 아이패드에서 지울까요", sub:c.name, danger:true, ok:"지우기",
+    body:`<p style="margin:0 0 6px">자료 ${(c.docs||[]).length}건, 노트 ${nRec}줄, 질문 답·체크·녹음이 함께 지워집니다. 내보내기를 하지 않았다면 복구할 수 없습니다.</p><p style="margin:0;color:var(--muted)">PC의 상담팩 zip은 그대로 남으니 다시 열면 됩니다.</p>`,
+    async onOk(){ await deleteCase(id); toast("지웠습니다",2500); } });
+};
+async function deleteCase(id){
+  const pref=id+"/";
+  for(const [st,pf] of [["blobs",pref],["hl","hl:"+pref]]){ try{ const rows=await all(st); const ks=rows.map(r=>r.k).filter(k=>typeof k==="string"&&k.startsWith(pf)); if(ks.length) await delMany(st,ks); }catch(e){ console.error(st,e); } }
+  try{ const metas=(await all("recmeta")).map(r=>r.v).filter(m=>m&&m.caseId===id); for(const m of metas){ const ks=[]; for(let i=1;i<=(m.n||0);i++) ks.push(m.id+"#"+i); if(ks.length) await delMany("rec",ks); await delMany("recmeta",[m.id]); } }catch(e){ console.error(e); }
+  for(const st of ["notes","qa","checks","todos"]){ try{ await delMany(st,[id]); }catch(e){} }
+  try{ await delMany("cases",[id]); }catch(e){}
+  try{ localStorage.removeItem("sn.fold."+id); if(localStorage.getItem("sn.case")===id) localStorage.removeItem("sn.case"); }catch(e){}
+  S.doc=null; S.notes=[]; S.qa={}; S.checks={}; S.todos=[];
+  await loadCases();
+  goTab("glance");
+}
 async function selectCase(id){
   S.caseId=id;
   try{ localStorage.setItem("sn.case",id); }catch(e){}

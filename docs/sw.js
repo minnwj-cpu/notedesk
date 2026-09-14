@@ -1,5 +1,5 @@
 /* 노트앱 서비스워커 — 앱 껍데기를 통째로 캐시한다. 판이 바뀌면 V 가 바뀌어 옛 캐시는 지운다 */
-const V="notedesk-51ab0f8c62";
+const V="notedesk-a461771481";
 const SHELL=["./", "./index.html", "./vendor/jszip.min.js", "./sangdam/icon-180.png", "./sangdam/icon-192.png", "./gijil/", "./gijil/index.html", "./gijil/manifest.webmanifest", "./gijil/icon-180.png", "./gijil/icon-192.png", "./gijil/icon-512.png", "./josa/", "./josa/index.html", "./josa/manifest.webmanifest", "./josa/icon-180.png", "./josa/icon-192.png", "./josa/icon-512.png", "./sangdam/", "./sangdam/index.html", "./sangdam/manifest.webmanifest", "./sangdam/icon-512.png"];
 self.addEventListener("install",e=>{
   e.waitUntil(caches.open(V).then(c=>c.addAll(SHELL.map(u=>new Request(u,{cache:"reload"})))).then(()=>self.skipWaiting()));
