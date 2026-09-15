@@ -354,7 +354,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.14b</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.15</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -367,6 +367,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
       <select id="caseSel" class="btn sm" style="max-width:190px" aria-label="사건 선택"></select>
       <button class="btn sm" id="openBtn">상담팩 열기</button>
       <button class="btn ghost sm" id="delCaseBtn" title="이 사건의 팩·노트·녹음을 아이패드에서 지운다">사건 지우기</button>
+      <button class="btn sm" id="wrapBtn" title="정한 것을 읽고 의뢰인 의사 칸을 채운다">마무리</button>
       <button class="btn sm primary" id="exportBtn">내보내기</button>
     </div>
   </header>
@@ -1166,7 +1167,34 @@ function renderFollow(){
 /* ══ 내보내기 ═════════════════════════════════════════════════════ */
 let downloads=null;
 if(window.claude&&claude.use) claude.use("downloads").then(d=>{downloads=d;}).catch(()=>{});
+function decisionsStatus(){
+  const g=(cur().glance||{}); const items=g.결정||[];
+  const filled=items.filter((x,i)=>((S.checks["dec:"+i]||{}).memo||"").trim()).length;
+  return {items, filled, total:items.length};
+}
+function wrapUp(then, okLabel){
+  const {items, filled, total}=decisionsStatus(); const ck=(cur().checks||{});
+  const req=(ck.요청||[]), reqDone=req.filter(x=>(S.checks[x.id]||{}).done).length;
+  const rows=items.map((x,i)=>{ const st=S.checks["dec:"+i]||{}; return `<div class="field"><label>${i+1}. ${esc(x.q)}</label><textarea data-wdec="${i}" rows="2" placeholder="상담에서 정한 것을 한 줄로 — 비우면 (미정)으로 나간다">${esc(st.memo||"")}</textarea></div>`; }).join("");
+  const sub=total?`정한 것 ${filled}/${total} 기록 · 받을 자료 ${reqDone}/${req.length} 체크`:"이 팩에는 정할 것이 없습니다";
+  modal({ title:"마무리 — 의뢰인 앞에서 읽고 적습니다", sub, ok: okLabel||"저장",
+    body: rows||`<p style="margin:0;color:var(--mute)">상담팩.json 의 한눈에.결정 에 항목을 두면 여기 뜹니다.</p>`,
+    async onOk(){
+      $("#mBody").querySelectorAll("[data-wdec]").forEach(ta=>{ const id="dec:"+ta.dataset.wdec; const v=S.checks[id]||{}; v.memo=ta.value; S.checks[id]=v; });
+      try{ await put("checks",S.caseId,S.checks); }catch(e){}
+      try{ renderGlance(); }catch(e){}
+      const left=decisionsStatus().total-decisionsStatus().filled;
+      toast(left?`저장 — 아직 ${left}개가 미정입니다`:"저장 — 정할 것을 모두 적었습니다",3000);
+      if(then) await then();
+    } });
+}
+$("#wrapBtn").onclick=()=>wrapUp(null);
 $("#exportBtn").onclick=async()=>{
+  const st=decisionsStatus();
+  if(st.total && st.filled<st.total && !S._wrapSeen){ S._wrapSeen=true; return wrapUp(doExport,"저장하고 내보내기"); }
+  await doExport();
+};
+async function doExport(){
   const c=cur(); const stamp=(c.meeting||{}).date||today();
   const base=`${(c.name||"사건").replace(/[\\/:*?"<>|]/g,"")}_${stamp.replace(/-/g,"")}`;
   let hl={}; try{ hl=await hlSummary(); }catch(e){}
@@ -1187,7 +1215,7 @@ function noteMarkdown(c,hl,recs){
   L.push(`- ${c.caseNo||"-"}`); (c.related||[]).forEach(r=>L.push(`- 관련 ${r}`));
   L.push(`- 상담 ${kdate(mt.date)} ${mt.time||""} ${mt.place||""} · ${mt.who||""} · ${mt.me||""}`.replace(/\s+/g," ").trim()); L.push("");
   if((g.개요||[]).length){ L.push("## 개요"); L.push(""); g.개요.forEach((x,i)=>L.push(`${i+1}. ${x}`)); L.push(""); }
-  if((g.결정||[]).length){ L.push("## 의뢰인이 정한 것"); L.push(""); g.결정.forEach((x,i)=>{ const st=S.checks["dec:"+i]||{}; L.push(`- **${x.q}** — ${st.memo||"(미정)"}`); }); L.push(""); }
+  if((g.결정||[]).length){ const st=decisionsStatus(); L.push(`## 의뢰인이 정한 것 (${st.filled}/${st.total} 기록)`); L.push(""); g.결정.forEach((x,i)=>{ const st=S.checks["dec:"+i]||{}; L.push(`- **${x.q}** — ${st.memo||"(미정)"}`); }); L.push(""); }
   const decs=S.notes.filter(n=>n.dec); if(decs.length){ L.push("## 상담 중 정한 것"); L.push(""); decs.forEach(n=>L.push(`- ${n.tx}  (${hhmm(n.t)} ${n.who})`)); L.push(""); }
   if(qa.length){ L.push("## 질문과 답"); L.push(""); L.push("| # | 질문 | 물었음 | 의뢰인 답 | 비고 |"); L.push("|---|---|---|---|---|");
     qa.forEach((q,i)=>{ const st=S.qa[q.id]||{}; L.push(`| ${i+1} | ${cell(q.q)} | ${st.asked?"○"+(st.t?" "+hhmm(st.t):""):"—"} | ${cell(st.actual||"")} | ${st.flag?"확인 더 필요":""} |`); }); L.push(""); }
