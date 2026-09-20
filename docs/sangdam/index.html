@@ -270,7 +270,9 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 /* 자료 */
 .reclist{width:300px;flex:0 0 300px;border-right:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0}
-.searchwrap{padding:9px 11px;border-bottom:1px solid var(--line-2)}
+.searchwrap{padding:9px 11px;border-bottom:1px solid var(--line-2);display:flex;gap:6px;align-items:center}
+.searchwrap input{flex:1;min-width:0}
+.row2{display:flex;gap:8px}.row2>*{flex:1;min-width:0}
 .searchwrap input{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface-2);font-size:13px;min-height:34px}
 .searchwrap input::placeholder{color:var(--mute-2)}
 .scroll{overflow-y:auto;flex:1;min-height:0;-webkit-overflow-scrolling:touch}
@@ -404,7 +406,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.15</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.16</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -415,6 +417,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
     <div class="right">
       <button class="btn ghost sm menuBtn" id="menuBtn">목록</button>
       <select id="caseSel" class="btn sm" style="max-width:190px" aria-label="사건 선택"></select>
+      <button class="btn sm" id="newBtn" title="상담팩 없이 그 자리에서 시작한다">새 상담</button>
       <button class="btn sm" id="openBtn">상담팩 열기</button>
       <button class="btn ghost sm" id="delCaseBtn" title="이 사건의 팩·노트·녹음을 아이패드에서 지운다">사건 지우기</button>
       <button class="btn sm" id="wrapBtn" title="정한 것을 읽고 의뢰인 의사 칸을 채운다">마무리</button>
@@ -446,7 +449,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
     <section class="pane" id="pane-rec">
       <aside class="reclist" id="recList">
-        <div class="searchwrap"><input id="docSearch" placeholder="자료·본문 찾기 (계약서, 인수증, 단가)" aria-label="검색"></div>
+        <div class="searchwrap"><input id="docSearch" placeholder="자료·본문 찾기 (계약서, 인수증, 단가)" aria-label="검색"><button class="btn sm" id="addPhoto" title="의뢰인이 가져온 서류를 찍어 넣는다">＋ 사진</button></div>
         <div class="legend"><span class="cl"><i></i>의뢰인</span><span class="op"><i></i>상대방</span><span class="c"><i></i>법원·기관</span></div>
         <div class="scroll" id="docScroll"></div>
       </aside>
@@ -503,6 +506,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 </div>
 
 <input type="file" id="fileIn" accept=".zip,application/zip" hidden>
+<input type="file" id="photoIn" accept="image/*" multiple hidden>
 <div class="scrim" id="scrim">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     <div class="mh"><h3 id="mTitle"></h3><p id="mSub"></p></div>
@@ -573,6 +577,75 @@ function demoCase(){
     qa:[{id:"d1",tag:"사실",q:"예시 질문 — 상담팩을 열면 의뢰인에게 물을 것이 여기 뜹니다",why:"왜 묻는지",src:[]}],
     checks:{요청:[{id:"dr1",tx:"의뢰인에게 받을 자료 예시"}],결정:[{id:"dd1",tx:"정할 것 예시"}],후속:[{id:"df1",tx:"상담 뒤에 할 일 예시",due:today()}]},
     docs:[], keys:{} };
+}
+
+/* ══ 새 상담 — 상담팩 없이 그 자리에서 ════════════════════════════ */
+$("#newBtn").onclick=()=>{
+  const now=new Date(), hm=String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0");
+  modal({ title:"새 상담", sub:"상담팩 없이 지금 시작합니다",
+    body:`<div class="field"><label>의뢰인 · 사건</label><input id="fNm" placeholder="예: 장왕수 물품대금"></div>
+      <div class="field"><label>상담 목적</label><input id="fKind" placeholder="예: 대여금 회수 방법"></div>
+      <div class="field"><label>장소</label><input id="fPl" value="사무실"></div>
+      <div class="field"><label>일시</label><div class="row2"><input type="date" id="fDate" value="${today()}"><input type="time" id="fTime" value="${hm}"></div></div>`,
+    ok:"시작",
+    async onOk(){
+      const name=$("#fNm").value.trim(); if(!name){ toast("의뢰인 이름을 적어 주세요"); return false; }
+      const id="w"+uid();
+      const meeting={ date:$("#fDate").value||today(), time:$("#fTime").value||hm, place:$("#fPl").value.trim(), who:name, me:"변호사 민웅재", kind:$("#fKind").value.trim() };
+      await put("cases",id,{ id, name, caseNo:"", related:[], walkin:true, meeting, meetings:[meeting],
+                             report:null, glance:{}, qa:[], checks:{}, docs:[], keys:{} });
+      await loadCases(id);
+      goTab("note");
+      toast("상담을 시작했습니다 — 받아적고, 가져온 서류는 자료 탭의 ＋사진으로",5000);
+    } });
+};
+
+/* ══ 의뢰인이 가져온 서류를 사진으로 ══════════════════════════════ */
+$("#addPhoto").onclick=()=>$("#photoIn").click();
+$("#photoIn").onchange=e=>{
+  const files=[...(e.target.files||[])]; e.target.value="";
+  if(!files.length) return;
+  modal({ title:`사진 ${files.length}장을 자료로`, sub:"찍은 차례가 면 차례가 됩니다",
+    body:`<div class="field"><label>이름</label><input id="fDn" value="지참자료"></div>
+      <div class="field"><label>누구 자료</label><select id="fSd"><option>의뢰인</option><option>상대방</option><option>법원</option><option>기타</option></select></div>`,
+    ok:"넣기",
+    async onOk(){
+      try{ await addPhotos(files,$("#fDn").value.trim()||"지참자료",$("#fSd").value); }
+      catch(err){ console.error(err); setProg(0); toast("사진을 넣지 못했습니다: "+(err.message||err),4500); }
+    } });
+};
+async function addPhotos(files,name,side){
+  const c=cur(); if(!c.id){ toast("먼저 사건을 고르세요"); return; }
+  setProg(.05);
+  const du=c.id+"/ph"+uid(), rows=[];
+  for(let i=0;i<files.length;i++){ rows.push({k:du+"#"+(i+1), v:await jpegOf(files[i])}); setProg(.05+.9*((i+1)/files.length)); }
+  await putMany("blobs",rows);
+  const docs=[...(c.docs||[]), { uid:du, key:null, name, group:"지참자료", side, date:today(), note:"상담 자리에서 찍음",
+                                 pages:files.length, text:[], toc:[], src:null, sha:du }];
+  const meta={...c, docs};
+  await put("cases",c.id,meta); S.cases[c.id]=meta; S.docs=docs;
+  setProg(1); renderDocs(); counts();
+  await openDoc(du,1);
+  toast(`${name} ${files.length}면 들어왔습니다`,3000);
+}
+/* 긴 변 2000px JPEG 로 줄여 담는다 — 아이패드 사진(HEIC 포함)도 여기서 JPEG 이 된다 */
+async function jpegOf(file){
+  const im=await bitmapOf(file);
+  const s=Math.min(1,2000/Math.max(im.width,im.height));
+  const cv=document.createElement("canvas"); cv.width=Math.round(im.width*s)||1; cv.height=Math.round(im.height*s)||1;
+  cv.getContext("2d").drawImage(im,0,0,cv.width,cv.height);
+  if(im.close) im.close();
+  const blob=await new Promise(r=>cv.toBlob(r,"image/jpeg",.75));
+  if(!blob) throw new Error("사진을 바꾸지 못했습니다");
+  return await blob.arrayBuffer();
+}
+async function bitmapOf(file){
+  if(window.createImageBitmap){ try{ return await createImageBitmap(file); }catch(e){} }
+  const url=URL.createObjectURL(file);
+  try{ const im=new Image();
+       await new Promise((res,rej)=>{ im.onload=res; im.onerror=()=>rej(new Error("사진을 읽지 못했습니다")); im.src=url; });
+       return im; }
+  finally{ setTimeout(()=>URL.revokeObjectURL(url),3000); }
 }
 
 /* ══ 상담팩 불러오기 ══════════════════════════════════════════════ */
@@ -745,6 +818,8 @@ function renderGlance(){
     h+=`<div class="sectionhd"><h2>같이 볼 자료</h2><span class="c">누르면 그 면</span></div><div class="card">`+
       g.짚을자료.map(x=>`<div class="spot">${pageBtn(x.doc,x.p)}<div class="lb">${linkify(x.label)}</div><div class="tx">${linkify(x.text)}</div></div>`).join("")+`</div>`;
   }
+  if(!g.한줄&&!(g.개요||[]).length&&!(g.숫자||[]).length&&!(g.결정||[]).length&&!(c.qa||[]).length)
+    h+=`<div class="card"><div class="hint">상담팩 없이 시작한 상담입니다. <b>노트</b>에 받아적고, 줄 옆 <b>✎</b> 받을 자료 · <b>★</b> 정한 것 · <b>☑</b> 할 일을 누르면 <b>후속</b>에 모입니다. 의뢰인이 가져온 서류는 <b>자료 → ＋사진</b>. 끝나면 <b>내보내기</b>.</div></div>`;
   h+=checklistHtml("의뢰인에게 받을 자료",ck.요청,"받았다");
   h+=checklistHtml("오늘 정할 것",ck.결정,"정했다",true);
   box.innerHTML=h||`<div class="card"><div class="bd"><div class="empty"><h2>한눈에 볼 것이 없습니다</h2><p>상담팩을 열면 상담팩.json 의 「한눈에」가 여기 뜹니다.</p></div></div></div>`;
@@ -842,7 +917,7 @@ function snippet(txt,q){
 function saveFold(){ try{ localStorage.setItem("sn.fold."+S.caseId,JSON.stringify(S.fold)); }catch(e){} }
 function renderDocs(){
   const q=$("#docSearch").value.trim(), box=$("#docScroll");
-  if(!S.docs.length){ box.innerHTML=`<div class="hint">상담팩을 열면 계약서·인수증·정산자료가 여기 쌓입니다. 다음 상담에는 새로 생긴 것만 더해집니다.</div>`; return; }
+  if(!S.docs.length){ box.innerHTML=`<div class="hint">상담팩을 열면 계약서·인수증·정산자료가 여기 쌓입니다. 다음 상담에는 새로 생긴 것만 더해집니다.<br><br>갑자기 찾아온 의뢰인이라면 <b>＋ 사진</b>으로 가져온 서류를 찍어 넣으세요. 넣은 면에도 펜·형광펜·인용이 그대로 됩니다.</div>`; return; }
   let html="";
   const nq=q.toLowerCase();
   if(q.length>=2){
@@ -1261,8 +1336,8 @@ async function doExport(){
 function noteMarkdown(c,hl,recs){
   const L=[], mt=c.meeting||{}, qa=c.qa||[], ck=c.checks||{}, g=c.glance||{};
   const cell=s=>String(s==null?"":s).replace(/\|/g,"\\|").replace(/\n/g," ");
-  L.push(`# ${c.name||""}  상담노트`); L.push("");
-  L.push(`- ${c.caseNo||"-"}`); (c.related||[]).forEach(r=>L.push(`- 관련 ${r}`));
+  L.push(`# ${c.name||""} 상담노트`); L.push("");
+  if(c.caseNo) L.push(`- ${c.caseNo}`); (c.related||[]).forEach(r=>L.push(`- 관련 ${r}`));
   L.push(`- 상담 ${kdate(mt.date)} ${mt.time||""} ${mt.place||""} · ${mt.who||""} · ${mt.me||""}`.replace(/\s+/g," ").trim()); L.push("");
   if((g.개요||[]).length){ L.push("## 개요"); L.push(""); g.개요.forEach((x,i)=>L.push(`${i+1}. ${x}`)); L.push(""); }
   if((g.결정||[]).length){ const st=decisionsStatus(); L.push(`## 의뢰인이 정한 것 (${st.filled}/${st.total} 기록)`); L.push(""); g.결정.forEach((x,i)=>{ const st=S.checks["dec:"+i]||{}; L.push(`- **${x.q}** — ${st.memo||"(미정)"}`); }); L.push(""); }
