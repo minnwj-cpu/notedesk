@@ -396,29 +396,11 @@ button{cursor:pointer;background:none;border:none;padding:0}
   .line{grid-template-columns:44px 56px 1fr auto;gap:8px;padding:5px 12px}
 }
 @media (min-width:901px){ .menuBtn{display:none} }
-
-/* 물어보기 */
-.qa{padding:12px 16px;border-bottom:1px solid var(--line-2)}
-.qa .q{display:grid;grid-template-columns:52px 1fr;gap:11px;font-size:15px;font-weight:600;line-height:1.5}
-.qa .q .ts{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--mute-2);padding-top:4px}
-.qa .a{margin:8px 0 0 63px}
-.qa .a .sum{padding:12px 15px;font-size:14.5px}
-.qa .a .sum h1{font-size:17px} .qa .a .sum h2{font-size:15.5px;margin:14px 0 6px}
-.qa .u{margin:6px 0 0 63px;font-family:var(--mono);font-size:11px;color:var(--mute-2)}
-.qa .u.err{color:var(--seal);font-family:var(--sans);font-size:12.5px;line-height:1.6}
-.qa .wait{margin-left:63px;color:var(--mute);font-size:13px}
-.askbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.askbar .m{flex:1;min-width:0;font-family:var(--mono);font-size:11px;color:var(--mute-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.askintro{padding:44px 24px;text-align:center;color:var(--mute)}
-.askintro h2{font-family:var(--serif);font-size:19px;color:var(--ink);margin:0 0 8px}
-.askintro p{margin:0 auto;max-width:46ch;font-size:14px;line-height:1.7}
-.askintro .ex{margin-top:14px;display:flex;flex-direction:column;gap:6px;align-items:center}
-.askintro .ex button{font-size:13.5px;color:var(--pen);border-bottom:1px dashed color-mix(in srgb,var(--pen) 45%,transparent)}
 </style>
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>기일노트</b><span>Hearing Desk · 9.9</span></div>
+    <div class="brand"><b>기일노트</b><span>Hearing Desk · 9.8d</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">사건을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -440,7 +422,6 @@ button{cursor:pointer;background:none;border:none;padding:0}
     <button class="tab" role="tab" data-t="note" aria-selected="false">노트 <span class="n" id="nNote">0</span></button>
     <button class="tab" role="tab" data-t="iss" aria-selected="false">쟁점 <span class="n" id="nIss">0</span></button>
     <button class="tab" role="tab" data-t="todo" aria-selected="false">숙제 <span class="n" id="nTodo">0</span></button>
-    <button class="tab" role="tab" data-t="ask" aria-selected="false">물어보기</button>
   </nav>
 
   <div class="main">
@@ -512,23 +493,6 @@ button{cursor:pointer;background:none;border:none;padding:0}
     <section class="pane" id="pane-todo">
       <div class="cols"><div class="wrapnarrow" id="todoWrap"></div></div>
     </section>
-
-    <section class="pane" id="pane-ask">
-      <div class="noteswrap">
-        <div class="notescroll" id="askScroll"></div>
-        <div class="composer">
-          <div class="askbar">
-            <span class="m" id="askMeta"></span>
-            <button class="btn ghost sm" id="askNew">새 대화</button>
-            <button class="btn ghost sm" id="askSet">설정</button>
-          </div>
-          <div class="inrow">
-            <textarea id="askIn" rows="1" placeholder="이 사건 기록을 두고 물어보기 — 엔터로 묻기"></textarea>
-            <button class="btn primary" id="askGo" style="min-height:44px">묻기</button>
-          </div>
-        </div>
-      </div>
-    </section>
   </div>
 </div>
 
@@ -545,8 +509,8 @@ button{cursor:pointer;background:none;border:none;padding:0}
 <script>
 "use strict";
 /* ══ 저장소 ═══════════════════════════════════════════════════════ */
-const DB_NAME="gijilnote", DB_VER=3;
-const STORES=["cases","docs","blobs","notes","issues","todos","hl","ask"];
+const DB_NAME="gijilnote", DB_VER=2;
+const STORES=["cases","docs","blobs","notes","issues","todos","hl"];
 let _db=null;
 function db(){
   if(_db) return Promise.resolve(_db);
@@ -750,7 +714,6 @@ async function selectCase(id){
   S.notes=(await get("notes",id))||[];
   S.issues=(await get("issues",id))||[];
   S.todos=(await get("todos",id))||[];
-  AI.turns=(await get("ask",id))||[]; AI.ctx=null;
   $("#caseName").textContent=c.name||"";
   $("#caseNo").textContent=c.caseNo||"";
   const hb=$("#hearingBadge"), h=c.hearing;
@@ -1563,7 +1526,6 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".tab").forEach(x=>x.setAttribute("aria-selected",String(x===t)));
   $$(".pane").forEach(p=>p.classList.toggle("on",p.id==="pane-"+t.dataset.t));
   if(t.dataset.t==="note") setTimeout(()=>{ const b=$("#noteScroll"); b.scrollTop=b.scrollHeight; },30);
-  if(t.dataset.t==="ask") renderAsk();
 });
 function counts(){
   $("#nRec").textContent=S.docs.reduce((s,d)=>s+(d.pages||0),0);
@@ -1571,7 +1533,7 @@ function counts(){
   $("#nIss").textContent=S.issues.length;
   $("#nTodo").textContent=S.todos.filter(t=>!t.done).length;
 }
-function renderAll(){ renderSummary(); renderDocs(); renderNotes(); renderIssues(); renderTodos(); renderAsk(); counts(); }
+function renderAll(){ renderSummary(); renderDocs(); renderNotes(); renderIssues(); renderTodos(); counts(); }
 
 /* 요약 탭 = 내가 써 둔 기일요약.md + 기록에서 자동으로 뽑은 진행 경과 */
 function mainRecord(){ return [...S.docs].filter(d=>d.form==="통합기록").sort((a,b)=>b.pages-a.pages)[0]||S.docs[0]||null; }
@@ -1637,241 +1599,6 @@ function renderSummary(){
   box.querySelectorAll("[data-uid][data-p]").forEach(b=>b.onclick=()=>{ goTab("rec"); openDoc(b.dataset.uid,+b.dataset.p); });
   const g=$("#sumGoIss"); if(g) g.onclick=()=>goTab("iss");
 }
-
-
-/* ══ 물어보기 ═════════════════════════════════════════════════════
-   이 사건의 기록·요약·오늘 노트를 근거로 붙여 클로드에게 바로 묻는다.
-   아이패드에서 api.anthropic.com 을 직접 부른다 — API 키는 이 기기 안에만 있고
-   질문과 기록은 앤트로픽 API 로만 간다 (claude.ai 대화에는 남지 않는다).
-   같은 사건에서 이어 물으면 기록 부분은 캐시(1시간)라 값이 1/10 로 떨어진다. */
-const AI={ key:null, model:"claude-opus-5", deep:false, busy:false, turns:[], ctx:null };
-const AI_PRICE={ "claude-opus-5":{i:5,o:25}, "claude-sonnet-5":{i:2,o:10} };
-const AI_NAME={ "claude-opus-5":"오퍼스 5", "claude-sonnet-5":"소네트 5" };
-const CTX_BUDGET=400000;   /* 기록 본문으로 보낼 글자 수 상한 — 대략 30만 토큰. 기록 한 권은 보통 다 들어간다 */
-const ASK_SYS=`당신은 변호사 민웅재가 법정에서 곁에 두고 쓰는 보조입니다. 아래 「사건 자료」만 근거로 답합니다.
-
-- 결론 한 줄을 먼저 쓰고, 그다음에 근거를 답니다. 법정에서 귀로 듣고 바로 말할 수 있게 짧게.
-- 근거는 반드시 자료에 적힌 이름과 면수를 그대로 씁니다. 「갑 제7호증」 「준비서면 3면」 「12면」처럼 쓰면 변호사가 그 자리에서 눌러 그 면으로 넘어갑니다.
-- 자료에 없는 것은 「기록에 없습니다」라고 말합니다. 지어내지 않습니다. 기록 밖의 일반 법리를 보탤 때는 기록 밖이라고 밝힙니다.
-- 기록 본문은 스캔을 기계로 읽은 글자라 오자가 있습니다. 날짜·금액은 어느 문서 몇 면에서 읽었는지 함께 밝힙니다.
-- 한국어로, 변호사에게 말하듯 군더더기 없이. 인사말·요약 반복·「도움이 되셨길」류는 쓰지 않습니다.`;
-
-function aiLoad(){ try{
-  AI.key=localStorage.getItem("gn.aikey")||null;
-  AI.model=localStorage.getItem("gn.aimodel")||"claude-opus-5";
-  AI.deep=localStorage.getItem("gn.aideep")==="1";
-}catch(e){} }
-aiLoad();
-
-/* 사건 자료 — 질문마다 같은 내용이어야 캐시가 듣는다. 그래서 오늘 노트는 여기 넣지 않는다 */
-function askContext(){
-  const c=S.cases[S.caseId]||{}, L=[], cut=[];
-  L.push(`# ${c.name||"사건"}${c.caseNo?" ("+c.caseNo+")":""}`);
-  if(c.court) L.push(`법원: ${c.court}`);
-  const h=c.hearing||{};
-  if(h.date) L.push(`이번 기일: ${kdate(h.date)} ${h.time||""} ${h.room||""} ${h.type||""}`.replace(/\s+/g," ").trim());
-  if((c.hearings||[]).length>1) L.push(`지난 기일: ${c.hearings.map(x=>kdate(x.date)).join(" · ")}`);
-  L.push("");
-  if(c.summary){ L.push("## 기일요약 (변호사가 미리 정리해 둔 것)"); L.push(""); L.push(c.summary); L.push(""); }
-  if(S.docs.length){
-    L.push("## 기록 목록"); L.push("");
-    S.docs.forEach(d=>L.push(`- ${d.name} · ${[d.form,d.side,d.date?kdate(d.date):""].filter(Boolean).join(" ")} · ${d.pages}면`));
-    L.push("");
-  }
-  const rows=[];
-  S.docs.forEach(d=>(d.toc||[]).forEach(r=>{ if(r.cat==="본문") rows.push(`- ${kdate(r.date)} ${r.side||""} ${r.title||r.kind||""} → ${d.name} ${r.p}면`); }));
-  if(rows.length){ L.push("## 제출 경과"); L.push(""); L.push(...rows); L.push(""); }
-  if(S.exIdx.length){
-    L.push("## 호증 색인"); L.push("");
-    S.exIdx.forEach(e=>{ const d=S.docs.find(x=>x.uid===e.uid);
-      L.push(`- ${e.key} ${e.title||e.label||""}${e.page?` → ${(d||{}).name||""} ${e.page}면`:""}`); });
-    L.push("");
-  }
-  L.push("## 기록 본문"); L.push("");
-  let used=L.join("\n").length;
-  outer:
-  for(const d of S.docs){
-    for(let i=0;i<(d.text||[]).length;i++){
-      const t=String(d.text[i]||"").trim(); if(!t) continue;
-      const blk=`[${d.name} ${i+1}면]\n${t}\n`;
-      if(used+blk.length>CTX_BUDGET){ cut.push(`${d.name} ${i+1}면부터`); break outer; }
-      L.push(blk); used+=blk.length+1;
-    }
-  }
-  if(cut.length) L.push(`\n(글자 수가 많아 ${cut[0]} 뒤의 본문은 빠졌습니다. 목록·경과·호증 색인은 전부 들어 있습니다.)`);
-  return { text:L.join("\n"), cut, chars:used };
-}
-
-/* 오늘 적은 것 — 계속 바뀌므로 질문 쪽에 붙인다 */
-function askLive(){
-  const L=[];
-  const ns=S.notes.slice(-60);
-  if(ns.length){ L.push("[오늘 법정에서 받아적은 것]");
-    ns.forEach(n=>L.push(`${hhmm(n.t)} ${n.who}: ${n.tx}${n.issue?" ★쟁점":""}${n.todo?" ☑숙제":""}`)); }
-  if(S.issues.length){ L.push(""); L.push("[쟁점]");
-    S.issues.forEach(it=>{ L.push(`- ${it.title}`);
-      (it.positions||[]).forEach(p=>L.push(`   · ${p.side} (${kdate(p.when)}): ${p.txt}`)); }); }
-  const open=S.todos.filter(t=>!t.done);
-  if(open.length){ L.push(""); L.push("[숙제]"); open.forEach(t=>L.push(`- ${t.tx}${t.due?` (${kdate(t.due)})`:""}`)); }
-  return L.join("\n");
-}
-
-function askCost(u,model){
-  if(!u) return "";
-  const pr=AI_PRICE[model]||AI_PRICE["claude-opus-5"];
-  const i=u.input_tokens||0, o=u.output_tokens||0, cw=u.cache_creation_input_tokens||0, cr=u.cache_read_input_tokens||0;
-  const usd=(i*pr.i + cw*pr.i*2 + cr*pr.i*0.1 + o*pr.o)/1e6;
-  const k=n=>n>=1000?(n/1000).toFixed(1)+"k":String(n);
-  return [`${AI_NAME[model]||model}`, cw?`캐시저장 ${k(cw)}`:null, cr?`캐시읽기 ${k(cr)}`:null,
-          i?`입력 ${k(i)}`:null, `출력 ${k(o)}`, `약 $${usd<0.01?usd.toFixed(4):usd.toFixed(3)}`].filter(Boolean).join(" · ");
-}
-
-/* 보낼 분량과 값 — 물어보기 전에 밝힌다. 기록은 1시간 캐시라 두 번째부터 1/10 이다 */
-function askEstimate(){
-  const ctx=AI.ctx||(AI.ctx=askContext());
-  const tok=Math.round(ctx.chars/1.3), pr=AI_PRICE[AI.model]||AI_PRICE["claude-opus-5"];
-  return { tok, cut:ctx.cut, first:tok/1e6*pr.i*2+1500/1e6*pr.o, next:tok/1e6*pr.i*0.1+1500/1e6*pr.o };
-}
-function usd(n){ return "$"+(n<0.01?n.toFixed(4):n.toFixed(2)); }
-function renderAsk(){
-  const box=$("#askScroll");
-  const meta=$("#askMeta");
-  if(meta){
-    const c=S.cases[S.caseId]||{};
-    if(!AI.key) meta.textContent="API 키를 넣어야 물어볼 수 있습니다 → 설정";
-    else{ let e=null; try{ e=askEstimate(); }catch(err){}
-      meta.textContent=[`${AI_NAME[AI.model]||AI.model}${AI.deep?" · 깊게":""}`,
-        e?`기록 약 ${Math.round(e.tok/1000)}k 토큰`:null,
-        e?`첫 질문 ${usd(e.first)} · 이어서 ${usd(e.next)}`:null].filter(Boolean).join(" · ");
-    }
-  }
-  if(!AI.turns.length){
-    box.innerHTML=`<div class="askintro"><h2>기록을 두고 물어보기</h2>
-      <p>이 사건의 <b>기일요약·서면 목록·제출 경과·호증 색인·기록 본문</b>과 <b>오늘 적은 노트·쟁점·숙제</b>를 근거로 답합니다.
-      답에 적힌 <b>면수와 호증</b>은 눌러서 바로 그 면으로 넘어갑니다.</p>
-      ${(()=>{ let e=null; try{ e=AI.key?askEstimate():null; }catch(err){}
-        if(!e) return "";
-        return `<p style="margin-top:10px;font-size:13px">기록 약 ${Math.round(e.tok/1000)}k 토큰을 함께 보냅니다 — 첫 질문 ${usd(e.first)}, 한 시간 안에 이어 물으면 ${usd(e.next)}.</p>`+
-          (e.cut.length?`<p style="margin-top:8px;font-size:13px;color:var(--seal)">기록이 많아 <b>${esc(e.cut[0])}</b>의 본문은 빠졌습니다. 목록·제출 경과·호증 색인은 전부 들어갑니다.</p>`:"");
-      })()}
-      <div class="ex">
-        <button data-ex="상대방이 오늘 새로 꺼낸 주장이 뭐지? 지난 서면과 어긋나는 데가 있나?">상대방이 오늘 새로 꺼낸 주장이 뭐지?</button>
-        <button data-ex="이 사건의 쟁점을 다툼 있는 것만 세 줄로 정리해 줘.">쟁점을 다툼 있는 것만 세 줄로</button>
-        <button data-ex="재판부가 오늘 지시한 것과 기한을 정리해 줘.">재판부가 오늘 지시한 것</button>
-      </div></div>`;
-    box.querySelectorAll("[data-ex]").forEach(b=>b.onclick=()=>{ $("#askIn").value=b.dataset.ex; $("#askIn").focus(); });
-    return;
-  }
-  box.innerHTML=AI.turns.map((t,i)=>{
-    if(t.role!=="user") return "";
-    const a=AI.turns[i+1];
-    return `<div class="qa"><div class="q"><span class="ts">${hhmm(t.t||Date.now())}</span><span>${esc(t.q||t.content)}</span></div>
-      ${a?`<div class="a"><div class="sum">${mdToHtml(a.content||"")}</div></div>${a.err?`<div class="u err">${esc(a.err)}</div>`:a.usage?`<div class="u">${esc(a.usage)}</div>`:""}`
-        :`<div class="wait" id="askWait">생각하는 중…</div>`}</div>`;
-  }).join("");
-  box.querySelectorAll("[data-uid][data-p]").forEach(b=>b.onclick=()=>{ goTab("rec"); openDoc(b.dataset.uid,+b.dataset.p); });
-  box.scrollTop=box.scrollHeight;
-}
-
-function askSetup(){
-  modal({ title:"물어보기 설정", sub:"키는 이 아이패드 안에만 저장됩니다",
-    body:`<div class="field"><label>Anthropic API 키</label>
-        <input id="fKey" type="password" autocomplete="off" placeholder="sk-ant-..." value="${esc(AI.key||"")}">
-        <span style="font-size:12px;color:var(--mute);line-height:1.6">console.anthropic.com → Settings → API keys 에서 만듭니다. 질문과 기록은 앤트로픽 API 로만 가고, 요금은 이 키로 청구됩니다.</span></div>
-      <div class="field"><label>모델</label><select id="fModel">
-        <option value="claude-opus-5"${AI.model==="claude-opus-5"?" selected":""}>오퍼스 5 — 가장 정확 (입력 $5·출력 $25 / 100만 토큰)</option>
-        <option value="claude-sonnet-5"${AI.model==="claude-sonnet-5"?" selected":""}>소네트 5 — 빠르고 싸다 (입력 $2·출력 $10)</option>
-      </select></div>
-      <div class="field"><label>깊이</label><select id="fDeep">
-        <option value="0"${AI.deep?"":" selected"}>보통 — 법정에서 바로 답</option>
-        <option value="1"${AI.deep?" selected":""}>깊게 — 오래 생각하고 답</option>
-      </select></div>`,
-    ok:"저장",
-    async onOk(){
-      AI.key=$("#fKey").value.trim()||null; AI.model=$("#fModel").value; AI.deep=$("#fDeep").value==="1";
-      try{ AI.key?localStorage.setItem("gn.aikey",AI.key):localStorage.removeItem("gn.aikey");
-           localStorage.setItem("gn.aimodel",AI.model); localStorage.setItem("gn.aideep",AI.deep?"1":"0"); }catch(e){}
-      renderAsk(); toast(AI.key?"저장했습니다":"키를 지웠습니다");
-    } });
-}
-
-async function askSend(){
-  if(AI.busy) return;
-  const ta=$("#askIn"), q=ta.value.trim(); if(!q) return;
-  if(!AI.key){ toast("먼저 설정에서 API 키를 넣어 주세요",3500); return askSetup(); }
-  ta.value=""; ta.style.height="";
-  AI.busy=true; $("#askGo").textContent="…";
-  const turn={role:"user", q, t:Date.now()};
-  AI.turns.push(turn);
-  const slot={role:"assistant", content:"", usage:"", err:""};
-  AI.turns.push(slot);
-  renderAsk();
-  try{
-    if(!AI.ctx) AI.ctx=askContext();
-    const live=askLive();
-    const msgs=[];
-    for(let i=0;i<AI.turns.length-2;i++){
-      const t=AI.turns[i];
-      if(t.role==="user") msgs.push({role:"user",content:t.q||t.content});
-      else if((t.content||"").trim()) msgs.push({role:"assistant",content:t.content});
-    }
-    msgs.push({role:"user",content:(live?live+"\n\n":"")+"질문: "+q});
-    const body={
-      model:AI.model, max_tokens:8000, stream:true, fallbacks:"default",
-      output_config:{effort:AI.deep?"high":"medium"},
-      system:[{type:"text",text:ASK_SYS},
-              {type:"text",text:"# 사건 자료\n\n"+AI.ctx.text,cache_control:{type:"ephemeral",ttl:"1h"}}],
-      messages:msgs
-    };
-    const res=await fetch("https://api.anthropic.com/v1/messages",{ method:"POST",
-      headers:{ "content-type":"application/json", "x-api-key":AI.key, "anthropic-version":"2023-06-01",
-                "anthropic-dangerous-direct-browser-access":"true", "anthropic-beta":"server-side-fallback-2026-07-01" },
-      body:JSON.stringify(body) });
-    if(!res.ok||!res.body){
-      let why=""; try{ const j=JSON.parse(await res.text()); why=(j.error&&j.error.message)||""; }catch(e){}
-      throw new Error(res.status===401?"API 키가 맞지 않습니다 — 설정에서 다시 넣어 주세요"
-                     :res.status===429?"잠시 뒤 다시 물어 주세요 (한도)"
-                     :`API 오류 ${res.status}${why?" — "+why:""}`);
-    }
-    const rd=res.body.getReader(), dec=new TextDecoder();
-    let buf="", usage=null, model=AI.model, stop=null, paint=0;
-    for(;;){
-      const {done,value}=await rd.read(); if(done) break;
-      buf+=dec.decode(value,{stream:true});
-      let i;
-      while((i=buf.indexOf("\n\n"))>=0){
-        const chunk=buf.slice(0,i); buf=buf.slice(i+2);
-        const line=chunk.split("\n").find(l=>l.startsWith("data:")); if(!line) continue;
-        let ev=null; try{ ev=JSON.parse(line.slice(5).trim()); }catch(e){ continue; }
-        if(ev.type==="content_block_delta"&&ev.delta&&ev.delta.type==="text_delta"){
-          slot.content+=ev.delta.text;
-          if(Date.now()-paint>120){ paint=Date.now(); renderAsk(); }
-        }else if(ev.type==="message_start"&&ev.message){ usage=Object.assign({},ev.message.usage); model=ev.message.model||model; }
-        else if(ev.type==="message_delta"){ if(ev.delta&&ev.delta.stop_reason) stop=ev.delta.stop_reason;
-          if(ev.usage) usage=Object.assign(usage||{},ev.usage); }
-        else if(ev.type==="error"){ throw new Error((ev.error&&ev.error.message)||"스트림 오류"); }
-      }
-    }
-    if(stop==="refusal"&&!slot.content.trim()) slot.err="이 질문은 답이 막혔습니다. 물음을 바꿔 다시 물어 주세요.";
-    else if(stop==="max_tokens") slot.err="답이 길어 중간에 끊겼습니다. 나눠서 물어 주세요.";
-    slot.usage=askCost(usage,model)+(AI.ctx.cut.length?" · 본문 일부 제외":"");
-  }catch(err){
-    console.error(err);
-    slot.err=(err&&err.message||String(err))+(String(err&&err.message).includes("Failed to fetch")?" (네트워크가 없으면 물어볼 수 없습니다)":"");
-  }finally{
-    AI.busy=false; $("#askGo").textContent="묻기";
-    try{ await put("ask",S.caseId,AI.turns); }catch(e){}
-    renderAsk();
-  }
-}
-
-$("#askGo").onclick=askSend;
-$("#askSet").onclick=askSetup;
-$("#askNew").onclick=()=>{ if(!AI.turns.length) return;
-  modal({ title:"이 사건의 문답을 지울까요", sub:"기록·노트는 그대로입니다", ok:"지우기", danger:true, body:"",
-    async onOk(){ AI.turns=[]; try{ await delMany("ask",[S.caseId]); }catch(e){} renderAsk(); } }); };
-$("#askIn").addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){ e.preventDefault(); askSend(); } });
-$("#askIn").addEventListener("input",e=>{ const t=e.target; t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,120)+"px"; });
 
 loadCases().catch(err=>{
   console.error(err);
