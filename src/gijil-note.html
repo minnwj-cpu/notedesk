@@ -458,8 +458,10 @@ button{cursor:pointer;background:none;border:none;padding:0}
 <script>
 "use strict";
 /* ══ 저장소 ═══════════════════════════════════════════════════════ */
-const DB_NAME="gijilnote", DB_VER=2;
-const STORES=["cases","docs","blobs","notes","issues","todos","hl"];
+/* DB_VER 은 3 에서 내리지 않는다 — 9.9(물어보기)를 한 번이라도 연 기기는 저장소가 3 이라,
+   2 로 열면 VersionError 로 앱이 통째로 안 열린다. ask 스토어는 안 써도 그대로 둔다. */
+const DB_NAME="gijilnote", DB_VER=3;
+const STORES=["cases","docs","blobs","notes","issues","todos","hl","ask"];
 let _db=null;
 function db(){
   if(_db) return Promise.resolve(_db);
