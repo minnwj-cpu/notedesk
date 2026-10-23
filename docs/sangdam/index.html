@@ -419,7 +419,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.20</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.21</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -1223,7 +1223,7 @@ function vmSetup(){
       <div class="field" style="margin-top:10px"><label>단축어 이름</label>
         <input id="fVm" placeholder="음성메모" value="${esc(vmName()||"")}"></div>
       <div class="field"><label>시험</label>
-        <a class="btn" id="vmTest" href="${esc(vmUrl())}">이 단축어 지금 열어 보기</a>
+        <a class="btn" id="vmTest" href="${esc(vmUrl())}" target="_blank" rel="noopener">이 단축어 지금 열어 보기</a>
         <span style="font-size:12px;color:var(--mute);line-height:1.6">여기를 눌러 음성 메모가 열리면 설정이 맞습니다.
         아무 일도 없으면 이름이 다르거나 단축어가 없는 것입니다 — 단축어 앱에서 이름을 그대로 베껴 오세요.</span></div>`,
     ok:"저장",
@@ -1282,7 +1282,7 @@ async function recWake(on){
 
 /* 앱 밖 녹음(아이패드 음성 메모)과 맞추기 — 소리는 안 담고 시각만 잰다.
    음성 메모는 배경에서도 계속 돌아가므로, 다른 앱을 오가야 하면 이 쪽이 안전하다 */
-function recStartExternal(){
+function recStartExternal(opt){
   if(REC.on) return;
   REC.on=true; REC.want=true; REC.external=true; REC.mr=null; REC.stream=null;
   REC.id="x"+Date.now().toString(36); REC.start=Date.now(); REC.n=0; REC.mime="external";
@@ -1290,7 +1290,9 @@ function recStartExternal(){
   recMetaSave(false);
   $("#recBadge").hidden=false; $("#recDot").hidden=false;
   REC.timer=setInterval(()=>{ const s=mmss((Date.now()-REC.start)/1000); $("#recBadge").textContent="● "+s; const t=$("#recTime"); if(t) t.textContent=s; },500);
-  renderAudio();
+  /* 링크를 눌러 들어온 경우에는 화면을 바로 다시 그리지 않는다 —
+     누른 <a> 가 사라지면 아이패드가 단축어로 넘어가는 것을 취소한다(2026-10-23) */
+  if(opt&&opt.defer) setTimeout(()=>{ try{ renderAudio(); }catch(e){} },1200); else renderAudio();
   toast(vmName()?"음성 메모가 열리면 빨간 단추를 누르고 돌아오세요":"지금 음성 메모의 녹음을 시작하세요 — 노트 줄마다 ● 시각이 남습니다",5000);
 }
 
@@ -1442,9 +1444,9 @@ async function renderAudio(){
       :"상담 녹음은 대화 당사자의 녹음이라 적법하지만, 시작 전에 의뢰인에게 알리세요."}</div>
     ${broke?`<div class="recalt"><button class="btn primary" id="recResumeBtn">이어서 녹음</button></div>`:""}
     ${(REC.on||REC.want)?"":`<div class="recalt">${vmName()
-        ?`<a class="btn" id="recExtBtn" href="${esc(vmUrl())}">음성 메모와 맞추기</a>`
+        ?`<a class="btn" id="recExtBtn" href="${esc(vmUrl())}" target="_blank" rel="noopener">음성 메모와 맞추기</a>`
         :`<button class="btn" id="recExtBtn">음성 메모와 맞추기</button>`}<button class="btn ghost sm" id="vmSetBtn">${vmName()?`단축어: ${esc(vmName())}`:"음성 메모 바로 열기 설정"}</button></div>`}
-    ${(REC.on&&REC.external&&vmName())?`<div class="recalt"><a class="btn ghost sm" href="${esc(vmUrl())}">음성 메모 다시 열기</a></div>`:""}
+    ${(REC.on&&REC.external&&vmName())?`<div class="recalt"><a class="btn ghost sm" href="${esc(vmUrl())}" target="_blank" rel="noopener">음성 메모 다시 열기</a></div>`:""}
     ${(REC.on&&!REC.external)?`<div class="recdiag"><b>다른 앱을 봐야 하면</b> 화면 나누기로 상담노트를 옆에 띄워 두세요. 상담노트가 화면에서 사라지는 순간 아이패드가 마이크를 끊습니다(웹 앱은 배경에서 녹음할 수 없습니다). 자리를 오래 비울 일이 있으면 「음성 메모와 맞추기」가 안전합니다.</div>`:""}
     ${REC.err&&dg.framed?`<div class="recdiag"><b>왜 막혔나</b> · ${esc(REC.errName||"")} · ${dg.framed?"이 화면은 claude.ai 틀(iframe) 안에 있습니다":"이 화면은 틀 밖(최상위)입니다"}.<br>
       틀 밖에서 직접 열면 마이크가 열릴 수 있습니다 — 아래 주소를 복사해 사파리 주소창에 붙여 넣어 보세요.
@@ -1464,7 +1466,7 @@ async function renderAudio(){
   box.innerHTML=h;
   $("#recBtn").onclick=()=>(REC.on||REC.want)?recStop():recStart();
   const xb=$("#recExtBtn");
-  if(xb) xb.onclick=()=>{ recStartExternal(); };   /* <a> 면 기본 동작(단축어로 넘어가기)을 막지 않는다 */
+  if(xb) xb.onclick=()=>{ recStartExternal({defer:xb.tagName==="A"}); };   /* <a> 면 기본 동작(단축어로 넘어가기)을 막지 않는다 */
   const rb=$("#recResumeBtn"); if(rb) rb.onclick=recResume;
   const vb=$("#vmSetBtn"); if(vb) vb.onclick=vmSetup;
   box.querySelectorAll("[data-attach]").forEach(b=>b.onclick=()=>{ _attachTo=b.dataset.attach; $("#audioIn").click(); });
