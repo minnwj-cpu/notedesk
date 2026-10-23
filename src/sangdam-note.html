@@ -369,7 +369,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.21</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.22</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -1151,6 +1151,12 @@ async function recFinalize(segId){
 function vmName(){ try{ return localStorage.getItem("sn.vm"); }catch(e){ return null; } }
 function vmSetName(n){ try{ n?localStorage.setItem("sn.vm",n):localStorage.removeItem("sn.vm"); }catch(e){} }
 function vmUrl(n){ return "shortcuts://run-shortcut?name="+encodeURIComponent(n||vmName()||""); }
+/* 홈 화면에 넣은 앱(standalone)은 아이패드가 다른 앱으로 넘기는 것을 통째로 막는다.
+   사파리 탭에서는 같은 링크가 열린다(2026-10-23 jae 실측) — 그래서 화면에 따라 다르게 보인다. */
+function isStandalone(){
+  try{ return window.navigator.standalone===true || matchMedia("(display-mode: standalone)").matches; }
+  catch(e){ return false; }
+}
 /* 홈 화면 앱에서는 코드로 주소를 넘기면(location.href) 아무 일도 안 일어나는 일이 잦다.
    손가락이 직접 누른 <a> 라야 아이패드가 단축어 앱으로 넘겨 준다(2026-10-23 jae 실측). */
 function vmOpen(){
@@ -1170,15 +1176,22 @@ function vmSetup(){
         2. 이름을 <b>음성메모</b> 로 저장 (다른 이름이면 아래 칸에 그 이름을 적습니다)<br>
         3. 아래 칸을 채우면, 「음성 메모와 맞추기」를 누를 때 음성 메모가 바로 열립니다<br>
         <span style="color:var(--mute)">비워 두면 열지 않고 시각만 잽니다.</span></div>
+      ${isStandalone()?`<div class="recdiag" style="margin:0 0 10px"><b>지금은 홈 화면 앱입니다.</b> 여기서는 아이패드가 다른 앱으로 넘기는 것을 막습니다. 상담 때는 <b>독에 음성 메모를 두고</b> 손으로 여는 쪽이 확실합니다 — 「음성 메모와 맞추기」가 시각은 재고 있습니다.</div>`:""}
       <div class="field" style="margin-top:10px"><label>단축어 이름</label>
         <input id="fVm" placeholder="음성메모" value="${esc(vmName()||"")}"></div>
-      <div class="field"><label>시험</label>
-        <a class="btn" id="vmTest" href="${esc(vmUrl())}" target="_blank" rel="noopener">이 단축어 지금 열어 보기</a>
-        <span style="font-size:12px;color:var(--mute);line-height:1.6">여기를 눌러 음성 메모가 열리면 설정이 맞습니다.
-        아무 일도 없으면 이름이 다르거나 단축어가 없는 것입니다 — 단축어 앱에서 이름을 그대로 베껴 오세요.</span></div>`,
+      <div class="field"><label>시험 — 셋 다 눌러 보고 열리는 것을 알려 주세요</label>
+        <a class="btn" id="vmT1" href="${esc(vmUrl())}">① 그냥 열기</a>
+        <a class="btn" id="vmT2" href="${esc(vmUrl())}" target="_blank" rel="noopener">② 새 창으로 열기</a>
+        <button class="btn" id="vmT3">③ 코드로 열기</button>
+        <span style="font-size:12px;color:var(--mute);line-height:1.6">지금 화면: <b>${isStandalone()?"홈 화면 앱":"사파리 탭"}</b>.
+        ${isStandalone()?"홈 화면 앱에서는 아이패드가 다른 앱으로 넘기는 것을 막아 셋 다 안 열릴 수 있습니다. 그때는 독에 음성 메모를 두고 손으로 여세요 — 시각 재기는 그대로 됩니다.":"아무것도 안 열리면 단축어 이름이 다른 것입니다 — 단축어 앱에서 이름을 그대로 베껴 오세요."}</span></div>`,
     ok:"저장",
-    onOpen(){ const i=$("#fVm"), t=$("#vmTest");
-      if(i&&t) i.oninput=()=>{ t.href="shortcuts://run-shortcut?name="+encodeURIComponent(i.value.trim()); }; },
+    onOpen(){
+      const i=$("#fVm"), t1=$("#vmT1"), t2=$("#vmT2"), t3=$("#vmT3");
+      const url=()=>"shortcuts://run-shortcut?name="+encodeURIComponent((i&&i.value.trim())||"");
+      if(i) i.oninput=()=>{ if(t1) t1.href=url(); if(t2) t2.href=url(); };
+      if(t3) t3.onclick=()=>{ try{ location.href=url(); }catch(e){ toast("코드로는 못 엽니다"); } };
+    },
     async onOk(){ vmSetName($("#fVm").value.trim()); renderAudio(); toast(vmName()?"저장했습니다":"열지 않고 시각만 잽니다"); } });
 }
 
@@ -1393,10 +1406,12 @@ async function renderAudio(){
         :`녹음 중입니다${REC.part>1?` (${REC.part}부)`:""}. 노트에 적는 줄마다 녹음 시각이 함께 남습니다.`)
       :"상담 녹음은 대화 당사자의 녹음이라 적법하지만, 시작 전에 의뢰인에게 알리세요."}</div>
     ${broke?`<div class="recalt"><button class="btn primary" id="recResumeBtn">이어서 녹음</button></div>`:""}
-    ${(REC.on||REC.want)?"":`<div class="recalt">${vmName()
-        ?`<a class="btn" id="recExtBtn" href="${esc(vmUrl())}" target="_blank" rel="noopener">음성 메모와 맞추기</a>`
-        :`<button class="btn" id="recExtBtn">음성 메모와 맞추기</button>`}<button class="btn ghost sm" id="vmSetBtn">${vmName()?`단축어: ${esc(vmName())}`:"음성 메모 바로 열기 설정"}</button></div>`}
-    ${(REC.on&&REC.external&&vmName())?`<div class="recalt"><a class="btn ghost sm" href="${esc(vmUrl())}" target="_blank" rel="noopener">음성 메모 다시 열기</a></div>`:""}
+    ${(REC.on||REC.want)?"":`<div class="recalt">${(vmName()&&!isStandalone())
+        ?`<a class="btn" id="recExtBtn" href="${esc(vmUrl())}">음성 메모와 맞추기</a>`
+        :`<button class="btn" id="recExtBtn">음성 메모와 맞추기</button>`}<button class="btn ghost sm" id="vmSetBtn">${isStandalone()?"음성 메모 여는 법":vmName()?`단축어: ${esc(vmName())}`:"음성 메모 바로 열기 설정"}</button></div>`}
+    ${(REC.on&&REC.external)?`<div class="recdiag">${isStandalone()
+        ?`<b>이제 독에서 음성 메모를 열고 빨간 단추를 누르세요.</b> 홈 화면에 넣은 앱에서는 아이패드가 다른 앱으로 넘겨 주지 않아, 이 앱이 음성 메모를 대신 열 수 없습니다. 시각은 이미 재고 있습니다.`
+        :`<b>음성 메모를 열고 빨간 단추를 누르세요.</b> 시각은 이미 재고 있습니다.`}${(vmName()&&!isStandalone())?` <a href="${esc(vmUrl())}" style="color:var(--pen)">음성 메모 다시 열기</a>`:""}</div>`:""}
     ${(REC.on&&!REC.external)?`<div class="recdiag"><b>다른 앱을 봐야 하면</b> 화면 나누기로 상담노트를 옆에 띄워 두세요. 상담노트가 화면에서 사라지는 순간 아이패드가 마이크를 끊습니다(웹 앱은 배경에서 녹음할 수 없습니다). 자리를 오래 비울 일이 있으면 「음성 메모와 맞추기」가 안전합니다.</div>`:""}
     ${REC.err&&dg.framed?`<div class="recdiag"><b>왜 막혔나</b> · ${esc(REC.errName||"")} · ${dg.framed?"이 화면은 claude.ai 틀(iframe) 안에 있습니다":"이 화면은 틀 밖(최상위)입니다"}.<br>
       틀 밖에서 직접 열면 마이크가 열릴 수 있습니다 — 아래 주소를 복사해 사파리 주소창에 붙여 넣어 보세요.
