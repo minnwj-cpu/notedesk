@@ -177,24 +177,20 @@ def _mark_gijil(d, S, col, bg):
 
 
 def _mark_josa(d, S, col, bg):
-    """조사 = 수사기관. 방패 안에 무궁화 — 경찰 공식 문양은 그대로 쓰지 않는다."""
-    import math
-    x0, x1 = S * .255, S * .745
-    y0, ym, y1 = S * .215, S * .560, S * .815
-    pts = [(x0, y0), (x1, y0)]
-    for i in range(41):                  # 오른쪽 어깨에서 아래 꼭짓점까지
-        t = i / 40
-        pts.append((x1 - (x1 - S * .5) * (t ** 2.1), ym + (y1 - ym) * t))
-    for i in range(41):
-        t = 1 - i / 40
-        pts.append((x0 + (S * .5 - x0) * (t ** 2.1), ym + (y1 - ym) * t))
-    d.polygon(pts, fill=col)
-    cx, cy, pr = S * .5, S * .455, S * .072      # 무궁화 다섯 잎
-    for k in range(5):
-        th = -math.pi / 2 + k * 2 * math.pi / 5
-        px, py = cx + math.cos(th) * pr * 1.02, cy + math.sin(th) * pr * 1.02
-        d.ellipse([px - pr, py - pr, px + pr, py + pr], fill=bg)
-    d.ellipse([cx - pr * .52, cy - pr * .52, cx + pr * .52, cy + pr * .52], fill=col)
+    """조사 = 조서 끝에 찍는 지장. 선을 중간중간 끊어야 지문으로 읽힌다 —
+       굵기가 같은 반원을 나란히 두면 무지개로 보인다(2026-10-23 jae 지적)."""
+    w = int(S * .042)
+    cx, cy = S * .5, S * .470
+
+    def ridge(rx, ry, a0, a1):
+        d.arc([cx - S * rx, cy - S * ry, cx + S * rx, cy + S * ry], a0, a1, fill=col, width=w)
+
+    d.ellipse([cx - S * .050, cy - S * .070, cx + S * .050, cy + S * .070], outline=col, width=w)
+    for (rx, ry), (a0, a1) in zip(((.110, .148), (.170, .230), (.230, .312)),
+                                  ((152, 300), (205, 388), (152, 334))):
+        ridge(rx, ry, a0, a1)
+    ridge(.170, .230, 330, 388)          # 끊긴 자리 뒤로 이어지는 선 끝
+    ridge(.110, .148, 330, 388)
 
 
 def _mark_sangdam(d, S, col, bg):
