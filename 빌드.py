@@ -167,21 +167,13 @@ def _rr(d, box, r, w, col):
 
 
 def _mark_gijil(d, S, col, bg):
-    """기일 = 법정. 판사봉과 받침 — 기울어진 봉이 한눈에 법정을 말한다."""
-    from PIL import Image, ImageDraw
-    L = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    g = ImageDraw.Draw(L)
-    cx, cy = S * .49, S * .395
-    hw, hh = S * .185, S * .080          # 봉 머리
-    g.rounded_rectangle([cx - hw, cy - hh, cx + hw, cy + hh], radius=int(hh * .5), fill=col)
-    sw = S * .044                        # 자루 — 머리의 절반 남짓, 길게 빼야 봉으로 읽힌다
-    g.rounded_rectangle([cx - sw, cy + hh - S * .006, cx + sw, cy + S * .345],
-                        radius=int(sw * .8), fill=col)
-    L = L.rotate(-40, resample=Image.BICUBIC, center=(cx, cy))
-    d._image.alpha_composite(L)
-    bw, bh = S * .225, S * .042          # 받침
-    by = S * .800
-    d.rounded_rectangle([cx - bw, by - bh, cx + bw, by + bh], radius=int(bh * .7), fill=col)
+    """기일 = 법정의 삼면. 재판부 한 줄 위, 원고·피고 두 줄 아래 — 이 앱 노트 탭의 구조 그대로다."""
+    def bar(x0, x1, y0, y1):
+        d.rounded_rectangle([x0 * S, y0 * S, x1 * S, y1 * S],
+                            radius=int((y1 - y0) * S * .5), fill=col)
+    bar(.255, .745, .295, .385)          # 재판부
+    bar(.215, .470, .605, .695)          # 원고
+    bar(.530, .785, .605, .695)          # 피고
 
 
 def _mark_josa(d, S, col, bg):
