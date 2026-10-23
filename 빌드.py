@@ -141,22 +141,69 @@ def build_app(a):
     return stamp_of(s)
 
 def make_icons(out, a):
-    from PIL import Image, ImageDraw, ImageFont
+    """글자 없는 선 아이콘 — 홈 화면에는 앱 이름이 이미 아래에 뜨므로 아이콘이 이름을 또 말할 필요가 없다.
+       4배로 그린 뒤 줄여 획을 매끄럽게 한다."""
+    from PIL import Image, ImageDraw
     for size in (180, 192, 512):
-        im = Image.new("RGBA", (size, size), a["color"])
+        S = size * 4
+        im = Image.new("RGB", (S, S), a["color"])
         d = ImageDraw.Draw(im)
-        # 살짝 밝은 띠 — 셋을 나란히 두었을 때 구분되게
-        d.rectangle([0, int(size * .78), size, size], fill=_mix(a["color"], "#FFFFFF", .16))
-        font = ImageFont.truetype(r"C:\Windows\Fonts\malgunbd.ttf", int(size * .56))
-        bb = d.textbbox((0, 0), a["ch"], font=font)
-        w, h = bb[2] - bb[0], bb[3] - bb[1]
-        d.text(((size - w) / 2 - bb[0], (size * .78 - h) / 2 - bb[1]), a["ch"], font=font, fill="#FFFFFF")
-        small = ImageFont.truetype(r"C:\Windows\Fonts\malgun.ttf", int(size * .11))
-        lb = a["name"]
-        bb = d.textbbox((0, 0), lb, font=small)
-        d.text(((size - (bb[2] - bb[0])) / 2 - bb[0], size * .78 + (size * .22 - (bb[3] - bb[1])) / 2 - bb[1]), lb, font=small, fill="#FFFFFF")
-        buf = io.BytesIO(); im.convert("RGB").save(buf, format="PNG", optimize=True)
+        # 위에서 아래로 아주 옅은 그늘 — 평면보다 깊어 보인다
+        top, bot = _mix(a["color"], "#FFFFFF", .10), _mix(a["color"], "#000000", .14)
+        for y in range(S):
+            t = y / S
+            d.line([(0, y), (S, y)], fill=_lerp(top, bot, t * t))
+        MARK[a["dir"]](d, S, "#FFFFFF")
+        im = im.resize((size, size), Image.LANCZOS)
+        buf = io.BytesIO(); im.save(buf, format="PNG", optimize=True)
         write(out / f"icon-{size}.png", buf.getvalue())
+
+
+def _rr(d, box, r, w, col):
+    d.rounded_rectangle(box, radius=r, outline=col, width=w)
+
+
+def _mark_gijil(d, S, col):
+    """기일 = 날짜. 달력 — 위 고리 둘, 머리띠, 그날 한 칸."""
+    w = int(S * .042); r = int(S * .065)
+    x0, x1 = S * .265, S * .735
+    y0, y1 = S * .305, S * .735
+    _rr(d, [x0, y0, x1, y1], r, w, col)
+    d.rectangle([x0 + w, y0 + w, x1 - w, y0 + S * .085], fill=col)          # 머리띠
+    for cx in (S * .385, S * .615):                                          # 고리
+        d.rounded_rectangle([cx - w * .8, S * .235, cx + w * .8, y0 + w * 1.2],
+                            radius=w, fill=col)
+    s = S * .072                                                             # 그날
+    cx, cy = S * .5, S * .575
+    d.rounded_rectangle([cx - s, cy - s, cx + s, cy + s], radius=int(w * .9), fill=col)
+
+
+def _mark_josa(d, S, col):
+    """조사 = 조서. 묻고 답한 줄 — 긴 줄 둘과 짧은 줄 하나."""
+    w = int(S * .042); r = int(S * .065)
+    x0, x1 = S * .265, S * .735
+    y0, y1 = S * .265, S * .735
+    _rr(d, [x0, y0, x1, y1], r, w, col)
+    for i, frac in enumerate((.68, .42, .68)):
+        y = y0 + S * (.115 + i * .105)
+        xs = x0 + S * .075
+        d.rounded_rectangle([xs, y - w * .55, xs + (x1 - x0 - S * .15) * frac, y + w * .55],
+                            radius=w, fill=col)
+
+
+def _mark_sangdam(d, S, col):
+    """상담 = 주고받는 말. 말풍선 둘을 어긋나게 둔다 — 겹치지 않아 작게 줄여도 둘로 보인다."""
+    w = int(S * .042); r = int(S * .07)
+    _rr(d, [S * .215, S * .250, S * .615, S * .505], r, w, col)              # 묻는 쪽
+    d.rounded_rectangle([S * .385, S * .545, S * .785, S * .800], radius=r, fill=col)  # 답하는 쪽
+
+
+MARK = {"gijil": _mark_gijil, "josa": _mark_josa, "sangdam": _mark_sangdam}
+
+
+def _lerp(c1, c2, t):
+    a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]; b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
+    return tuple(round(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 def _mix(c1, c2, t):
     a = [int(c1[i:i + 2], 16) for i in (1, 3, 5)]; b = [int(c2[i:i + 2], 16) for i in (1, 3, 5)]
