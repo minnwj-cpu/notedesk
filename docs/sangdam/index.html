@@ -419,7 +419,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.18</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.19</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -520,6 +520,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <input type="file" id="fileIn" accept=".zip,application/zip" hidden>
 <input type="file" id="photoIn" accept="image/*" multiple hidden>
+<input type="file" id="audioIn" accept="audio/*,.m4a,.mp3,.wav" hidden>
 <div class="scrim" id="scrim">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
     <div class="mh"><h3 id="mTitle"></h3><p id="mSub"></p></div>
@@ -771,6 +772,7 @@ async function selectCase(id){
   if(h&&h.date){ hb.hidden=false; hb.textContent=[kdate(h.date),h.time,h.who].filter(Boolean).join(" · "); } else hb.hidden=true;
   $("#demoBadge").hidden=!c.demo;
   closeDoc();
+  await recRestoreExternal();
   await renderAll();
 }
 function goTab(t){ const b=document.querySelector('.tab[data-t="'+t+'"]'); if(b&&b.getAttribute("aria-selected")!=="true") b.click(); }
@@ -1192,6 +1194,68 @@ async function recFinalize(segId){
     renderAudio();
   }catch(e){ console.error(e); }
 }
+/* ── 음성 메모 띄우기 ───────────────────────────────────────────────
+   애플 음성 메모에는 웹에서 부를 수 있는 공개 주소가 없다. 단축어 앱에는 있다 —
+   `shortcuts://run-shortcut?name=<이름>`. 아이패드에서 「앱 열기 → 음성 메모」
+   한 동작짜리 단축어를 하나 만들어 두면 이 단추가 그걸 부른다. */
+function vmName(){ try{ return localStorage.getItem("sn.vm"); }catch(e){ return null; } }
+function vmSetName(n){ try{ n?localStorage.setItem("sn.vm",n):localStorage.removeItem("sn.vm"); }catch(e){} }
+function vmOpen(){
+  const n=vmName(); if(!n) return false;
+  try{ location.href="shortcuts://run-shortcut?name="+encodeURIComponent(n); return true; }catch(e){ return false; }
+}
+function vmSetup(){
+  modal({ title:"음성 메모 띄우기", sub:"단축어 하나를 만들어 두면 녹음 단추가 음성 메모를 엽니다",
+    body:`<div style="font-size:13.5px;line-height:1.75;color:var(--ink-2)">
+        <b>한 번만 만들면 됩니다.</b><br>
+        1. 아이패드 <b>단축어</b> 앱 → ＋ → <b>앱 열기</b> 를 고르고 <b>음성 메모</b> 선택<br>
+        2. 이름을 <b>음성메모</b> 로 저장 (다른 이름이면 아래 칸에 그 이름을 적습니다)<br>
+        3. 아래 칸을 채우면, 「음성 메모와 맞추기」를 누를 때 음성 메모가 바로 열립니다<br>
+        <span style="color:var(--mute)">비워 두면 열지 않고 시각만 잽니다.</span></div>
+      <div class="field" style="margin-top:10px"><label>단축어 이름</label>
+        <input id="fVm" placeholder="음성메모" value="${esc(vmName()||"")}"></div>`,
+    ok:"저장",
+    async onOk(){ vmSetName($("#fVm").value.trim()); renderAudio(); toast(vmName()?"저장했습니다":"열지 않고 시각만 잽니다"); } });
+}
+
+/* ── 음성 메모로 녹음한 파일을 그 상담에 붙인다 ─────────────────────
+   붙이고 나면 ● 시각을 눌러 그 대목부터 들을 수 있다 — 앱 안 녹음과 똑같아진다 */
+let _attachTo=null;
+$("#audioIn").onchange=async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value="";
+  const id=_attachTo; _attachTo=null;
+  if(!f||!id) return;
+  try{ await attachAudio(id,f); }
+  catch(err){ console.error(err); setProg(0); toast("음성 파일을 붙이지 못했습니다: "+(err.message||err),5000); }
+};
+async function attachAudio(id,file){
+  const m=await recMeta(id); if(!m){ toast("이 녹음을 찾지 못했습니다"); return; }
+  setProg(.05);
+  const buf=await file.arrayBuffer();
+  const CH=4*1048576, n=Math.max(1,Math.ceil(buf.byteLength/CH)), rows=[];
+  for(let i=0;i<n;i++){ rows.push({k:id+"#"+(i+1), v:buf.slice(i*CH,(i+1)*CH)}); setProg(.05+.8*((i+1)/n)); }
+  await putMany("rec",rows);
+  await put("recmeta",id,{...m, n, mime:file.type||"audio/mp4", file:file.name, fin:true, end:m.end||Date.now()});
+  setProg(1); renderAudio();
+  toast(`${file.name} 를 붙였습니다 — ● 시각을 누르면 그 대목부터 들립니다`,5000);
+}
+
+/* 음성 메모를 열면 이 화면은 뒤로 간다. 돌아왔을 때 재던 시각을 이어 센다 */
+async function recRestoreExternal(){
+  if(REC.on||REC.want) return;
+  try{
+    const rows=(await all("recmeta")).map(r=>r.v)
+      .filter(m=>m&&m.caseId===S.caseId&&m.external&&!m.fin&&Date.now()-m.start<8*3600e3);
+    if(!rows.length) return;
+    const m=rows.sort((a,b)=>b.start-a.start)[0];
+    REC.on=true; REC.want=true; REC.external=true; REC.id=m.id; REC.start=m.start;
+    REC.session=m.session||m.id; REC.part=m.part||1; REC.n=m.n||0; REC.mime="external"; REC.err=null;
+    $("#recBadge").hidden=false; $("#recDot").hidden=false;
+    clearInterval(REC.timer);
+    REC.timer=setInterval(()=>{ const t=mmss((Date.now()-REC.start)/1000); $("#recBadge").textContent="● "+t; const e=$("#recTime"); if(e) e.textContent=t; },500);
+  }catch(e){ console.error(e); }
+}
+
 function recFail(msg,name){ REC.err=msg; REC.errName=name||""; renderAudio(); toast(msg,6000); }
 
 /* 화면이 꺼지면 그것만으로도 녹음이 끊긴다 — 녹음 중에는 붙들어 둔다 */
@@ -1213,7 +1277,8 @@ function recStartExternal(){
   $("#recBadge").hidden=false; $("#recDot").hidden=false;
   REC.timer=setInterval(()=>{ const s=mmss((Date.now()-REC.start)/1000); $("#recBadge").textContent="● "+s; const t=$("#recTime"); if(t) t.textContent=s; },500);
   renderAudio();
-  toast("지금 음성 메모의 녹음을 시작하세요 — 노트 줄마다 ● 시각이 남습니다",4000);
+  if(vmOpen()) toast("음성 메모를 엽니다 — 빨간 단추를 누르고 상담노트로 돌아오세요",5000);
+  else toast("지금 음성 메모의 녹음을 시작하세요 — 노트 줄마다 ● 시각이 남습니다",4500);
 }
 
 async function recOpen(){
@@ -1363,7 +1428,7 @@ async function renderAudio(){
         :`녹음 중입니다${REC.part>1?` (${REC.part}부)`:""}. 노트에 적는 줄마다 녹음 시각이 함께 남습니다.`)
       :"상담 녹음은 대화 당사자의 녹음이라 적법하지만, 시작 전에 의뢰인에게 알리세요."}</div>
     ${broke?`<div class="recalt"><button class="btn primary" id="recResumeBtn">이어서 녹음</button></div>`:""}
-    ${(REC.on||REC.want)?"":`<div class="recalt"><button class="btn" id="recExtBtn">음성 메모와 맞추기</button></div>`}
+    ${(REC.on||REC.want)?"":`<div class="recalt"><button class="btn" id="recExtBtn">음성 메모와 맞추기</button><button class="btn ghost sm" id="vmSetBtn">${vmName()?`음성 메모 열기: ${esc(vmName())}`:"음성 메모 바로 열기 설정"}</button></div>`}
     ${(REC.on&&!REC.external)?`<div class="recdiag"><b>다른 앱을 봐야 하면</b> 화면 나누기로 상담노트를 옆에 띄워 두세요. 상담노트가 화면에서 사라지는 순간 아이패드가 마이크를 끊습니다(웹 앱은 배경에서 녹음할 수 없습니다). 자리를 오래 비울 일이 있으면 「음성 메모와 맞추기」가 안전합니다.</div>`:""}
     ${REC.err&&dg.framed?`<div class="recdiag"><b>왜 막혔나</b> · ${esc(REC.errName||"")} · ${dg.framed?"이 화면은 claude.ai 틀(iframe) 안에 있습니다":"이 화면은 틀 밖(최상위)입니다"}.<br>
       틀 밖에서 직접 열면 마이크가 열릴 수 있습니다 — 아래 주소를 복사해 사파리 주소창에 붙여 넣어 보세요.
@@ -1375,21 +1440,49 @@ async function renderAudio(){
       rows.map(m=>{ const marks=S.notes.filter(n=>n.rec&&n.rec.id===m.id); const cur_=REC.on&&REC.id===m.id;
         return `<div class="recrow" data-rid="${esc(m.id)}"><div><div class="t">${esc(kdate(new Date(m.start).toISOString().slice(0,10)))} ${hhmm(m.start)}${(m.part||1)>1?` · ${m.part}부`:""}${m.external?" · 음성 메모와 맞춤":""}${cur_?" · 진행 중":m.fin?"":" · 중단됨"}</div>
           ${m.gapMs>1500?`<div class="m" style="color:var(--seal)">⟂ 앞 토막 뒤 ${esc(mmss(m.gapMs/1000))} 끊김</div>`:""}
-          <div class="m">${mmss(m.dur||0)}${m.external?" · 소리는 음성 메모 앱에":` · ${m.n||0}조각 · ${esc(m.mime||"")}`}</div></div>
-          <div class="acts">${cur_?"":(m.external?`<button class="btn ghost sm" data-rdel="${esc(m.id)}">×</button>`:`<button class="btn sm" data-play="${esc(m.id)}">듣기</button><button class="btn sm primary" data-dl="${esc(m.id)}">내려받기</button><button class="btn ghost sm" data-rdel="${esc(m.id)}">×</button>`)}</div>
-          ${marks.length?`<div class="marks">${marks.map(n=>`<div><span>${mmss(n.rec.off)}</span>${esc(n.who)} · ${esc(n.tx.slice(0,80))}</div>`).join("")}</div>`:""}
+          <div class="m">${mmss(m.dur||0)}${m.external?(m.n?` · ${esc(m.file||"음성 파일 붙임")}`:" · 소리는 음성 메모 앱에 — 파일을 넣으면 ● 시각으로 들을 수 있습니다"):` · ${m.n||0}조각 · ${esc(m.mime||"")}`}</div></div>
+          <div class="acts">${cur_?"":`${(m.external&&!m.n)?`<button class="btn sm primary" data-attach="${esc(m.id)}">음성 파일 넣기</button>`:`<button class="btn sm" data-play="${esc(m.id)}">듣기</button><button class="btn sm primary" data-dl="${esc(m.id)}">내려받기</button>`}${m.external&&m.n?`<button class="btn ghost sm" data-delay="${esc(m.id)}">맞추기${m.delay?` ${m.delay>0?"+":""}${m.delay}초`:""}</button><button class="btn ghost sm" data-attach="${esc(m.id)}">파일 바꾸기</button>`:""}<button class="btn ghost sm" data-rdel="${esc(m.id)}">×</button>`}</div>
+          ${marks.length?`<div class="marks">${marks.map(n=>`<div><button class="btn ghost sm" data-seek="${esc(m.id)}" data-off="${n.rec.off}" style="padding:0 4px;min-height:22px"><span>${mmss(n.rec.off)}</span></button>${esc(n.who)} · ${esc(n.tx.slice(0,80))}</div>`).join("")}</div>`:""}
           <div class="playwrap" id="play-${esc(m.id)}"></div></div>`; }).join("")+`</div>`;
   }
   box.innerHTML=h;
   $("#recBtn").onclick=()=>(REC.on||REC.want)?recStop():recStart();
   const xb=$("#recExtBtn"); if(xb) xb.onclick=recStartExternal;
   const rb=$("#recResumeBtn"); if(rb) rb.onclick=recResume;
-  box.querySelectorAll("[data-play]").forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.play; const r=await recChunks(id); if(!r){ toast("녹음을 찾지 못했습니다"); return; }
-    if(r.blob.size>40*1048576){ toast("40MB가 넘어 앱 안에서는 재생하지 않습니다 — 내려받아 들으세요",4000); return; }
-    const url=await toDataURL(await r.blob.arrayBuffer(), r.meta.mime||"audio/mp4");
-    const w=document.getElementById("play-"+id); if(w) w.innerHTML=`<audio controls src="${url}"></audio>`;
+  const vb=$("#vmSetBtn"); if(vb) vb.onclick=vmSetup;
+  box.querySelectorAll("[data-attach]").forEach(b=>b.onclick=()=>{ _attachTo=b.dataset.attach; $("#audioIn").click(); });
+  box.querySelectorAll("[data-delay]").forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.delay, m0=await recMeta(id); if(!m0) return;
+    modal({ title:"● 시각 맞추기", sub:"앱 단추와 음성 메모 빨간 단추 사이의 틈",
+      body:`<div style="font-size:13.5px;line-height:1.7;color:var(--ink-2)">
+          ● 시각을 눌렀는데 말이 조금 <b>뒤에</b> 나오면 <b>+</b> 쪽으로, 조금 <b>앞서</b> 나오면 <b>−</b> 쪽으로 옮깁니다.<br>
+          음성 메모의 빨간 단추를 5초 늦게 눌렀다면 <b>5</b>입니다.</div>
+        <div class="field" style="margin-top:10px"><label>늦게 누른 초</label>
+          <input type="number" id="fDelay" step="1" value="${(m0.delay||0)}"></div>`,
+      ok:"저장",
+      async onOk(){ const v=Math.round(+$("#fDelay").value||0);
+        await put("recmeta",id,{...m0,delay:v}); renderAudio();
+        toast(v?`${v}초 당겨서 듣습니다`:"보정을 지웠습니다"); } });
   });
+  async function openPlayer(id,seek){
+    const w=document.getElementById("play-"+id); if(!w) return null;
+    let au=w.querySelector("audio");
+    if(!au){
+      const r=await recChunks(id);
+      if(!r||!r.blob.size){ toast("소리가 들어 있지 않습니다 — 음성 파일을 넣어 주세요",4000); return null; }
+      if(REC.playUrl[id]) URL.revokeObjectURL(REC.playUrl[id]);
+      REC.playUrl[id]=URL.createObjectURL(r.blob);        /* 큰 파일은 blob 주소라야 열린다 */
+      w.innerHTML=`<audio controls preload="metadata" src="${REC.playUrl[id]}"></audio>`;
+      au=w.querySelector("audio");
+    }
+    if(seek!=null){ const m0=await recMeta(id); const d=(m0&&m0.delay)||0;
+      const at=Math.max(0,seek-d);
+      const go=()=>{ try{ au.currentTime=at; au.play(); }catch(e){} };
+      if(au.readyState>0) go(); else au.addEventListener("loadedmetadata",go,{once:true}); }
+    return au;
+  }
+  box.querySelectorAll("[data-play]").forEach(b=>b.onclick=()=>openPlayer(b.dataset.play,null));
+  box.querySelectorAll("[data-seek]").forEach(b=>b.onclick=()=>openPlayer(b.dataset.seek,+b.dataset.off));
   box.querySelectorAll("[data-dl]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.dl; const r=await recChunks(id); if(!r){ toast("녹음을 찾지 못했습니다"); return; }
     if(!downloads){ toast("이 화면에서는 파일 저장이 막혀 있습니다",4000); return; }
