@@ -156,6 +156,15 @@ def make_icons(out, a):
             d.line([(0, y), (S, y)], fill=_lerp(top, bot, y / S))
         layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
         MARK[a["dir"]](ImageDraw.Draw(layer), S, (255, 255, 255, 255), base)
+        # 그린 것의 실제 테두리를 재서 한가운데로 옮긴다 — 아래가 트인 모양(지장)은
+        # 좌표대로 두면 위로 쏠려 보인다(2026-10-23 jae 지적)
+        bb = layer.getbbox()
+        if bb:
+            dx, dy = (S - bb[0] - bb[2]) // 2, (S - bb[1] - bb[3]) // 2
+            if dx or dy:
+                moved = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+                moved.paste(layer, (dx, dy))
+                layer = moved
         im = Image.alpha_composite(im.convert("RGBA"), layer).convert("RGB")
         im = im.resize((size, size), Image.LANCZOS)
         buf = io.BytesIO(); im.save(buf, format="PNG", optimize=True)
