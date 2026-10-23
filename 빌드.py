@@ -35,10 +35,11 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = Path(__file__).resolve().parent
 SRC, DOCS, VENDOR = ROOT / "src", ROOT / "docs", ROOT / "vendor"
 
+# color = 앱 머리글 색(화면), icon = 홈 화면 아이콘 바탕(더 맑게 올린 같은 계열)
 APPS = [
-    dict(dir="gijil",   src="gijil-note.html",   name="기일노트", ch="기", color="#2C4E7A", desc="법정 — 제출 기록 · 기일 노트 · 쟁점 · 숙제"),
-    dict(dir="josa",    src="josa-note.html",    name="조사노트", ch="조", color="#1F5F5B", desc="조사실 — 브리핑 · 예상문답 · 기록 · 열람"),
-    dict(dir="sangdam", src="sangdam-note.html", name="상담노트", ch="상", color="#7A3B5C", desc="상담실 — 검토보고서 · 자료 · 질문 · 녹음"),
+    dict(dir="gijil",   src="gijil-note.html",   name="기일노트", ch="기", color="#2C4E7A", icon="#2558C8", desc="법정 — 제출 기록 · 기일 노트 · 쟁점 · 숙제"),
+    dict(dir="josa",    src="josa-note.html",    name="조사노트", ch="조", color="#1F5F5B", icon="#0E9E8C", desc="조사실 — 브리핑 · 예상문답 · 기록 · 열람"),
+    dict(dir="sangdam", src="sangdam-note.html", name="상담노트", ch="상", color="#7A3B5C", icon="#C0477B", desc="상담실 — 검토보고서 · 자료 · 질문 · 녹음"),
 ]
 
 # claude.ai 아티팩트가 씌우던 껍데기와 같은 초기화 — 화면이 아티팩트 판과 똑같이 나온다
@@ -144,16 +145,18 @@ def make_icons(out, a):
     """글자 없는 선 아이콘 — 홈 화면에는 앱 이름이 이미 아래에 뜨므로 아이콘이 이름을 또 말할 필요가 없다.
        4배로 그린 뒤 줄여 획을 매끄럽게 한다."""
     from PIL import Image, ImageDraw
+    base = a.get("icon", a["color"])
     for size in (180, 192, 512):
         S = size * 4
-        im = Image.new("RGB", (S, S), a["color"])
+        im = Image.new("RGB", (S, S), base)
         d = ImageDraw.Draw(im)
-        # 위에서 아래로 아주 옅은 그늘 — 평면보다 깊어 보인다
-        top, bot = _mix(a["color"], "#FFFFFF", .10), _mix(a["color"], "#000000", .14)
+        # 위가 밝고 아래로 가며 본색 — 어둡게 깔면 칙칙해 보인다
+        top, bot = _mix(base, "#FFFFFF", .20), _mix(base, "#000000", .05)
         for y in range(S):
-            t = y / S
-            d.line([(0, y), (S, y)], fill=_lerp(top, bot, t * t))
-        MARK[a["dir"]](d, S, "#FFFFFF")
+            d.line([(0, y), (S, y)], fill=_lerp(top, bot, y / S))
+        layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+        MARK[a["dir"]](ImageDraw.Draw(layer), S, (255, 255, 255, 255), base)
+        im = Image.alpha_composite(im.convert("RGBA"), layer).convert("RGB")
         im = im.resize((size, size), Image.LANCZOS)
         buf = io.BytesIO(); im.save(buf, format="PNG", optimize=True)
         write(out / f"icon-{size}.png", buf.getvalue())
@@ -163,39 +166,62 @@ def _rr(d, box, r, w, col):
     d.rounded_rectangle(box, radius=r, outline=col, width=w)
 
 
-def _mark_gijil(d, S, col):
-    """기일 = 날짜. 달력 — 위 고리 둘, 머리띠, 그날 한 칸."""
-    w = int(S * .042); r = int(S * .065)
-    x0, x1 = S * .265, S * .735
-    y0, y1 = S * .305, S * .735
-    _rr(d, [x0, y0, x1, y1], r, w, col)
-    d.rectangle([x0 + w, y0 + w, x1 - w, y0 + S * .085], fill=col)          # 머리띠
-    for cx in (S * .385, S * .615):                                          # 고리
-        d.rounded_rectangle([cx - w * .8, S * .235, cx + w * .8, y0 + w * 1.2],
-                            radius=w, fill=col)
-    s = S * .072                                                             # 그날
-    cx, cy = S * .5, S * .575
-    d.rounded_rectangle([cx - s, cy - s, cx + s, cy + s], radius=int(w * .9), fill=col)
+def _mark_gijil(d, S, col, bg):
+    """기일 = 법정. 판사봉과 받침 — 기울어진 봉이 한눈에 법정을 말한다."""
+    from PIL import Image, ImageDraw
+    L = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    g = ImageDraw.Draw(L)
+    cx, cy = S * .49, S * .395
+    hw, hh = S * .185, S * .080          # 봉 머리
+    g.rounded_rectangle([cx - hw, cy - hh, cx + hw, cy + hh], radius=int(hh * .5), fill=col)
+    sw = S * .044                        # 자루 — 머리의 절반 남짓, 길게 빼야 봉으로 읽힌다
+    g.rounded_rectangle([cx - sw, cy + hh - S * .006, cx + sw, cy + S * .345],
+                        radius=int(sw * .8), fill=col)
+    L = L.rotate(-40, resample=Image.BICUBIC, center=(cx, cy))
+    d._image.alpha_composite(L)
+    bw, bh = S * .225, S * .042          # 받침
+    by = S * .800
+    d.rounded_rectangle([cx - bw, by - bh, cx + bw, by + bh], radius=int(bh * .7), fill=col)
 
 
-def _mark_josa(d, S, col):
-    """조사 = 조서. 묻고 답한 줄 — 긴 줄 둘과 짧은 줄 하나."""
-    w = int(S * .042); r = int(S * .065)
-    x0, x1 = S * .265, S * .735
-    y0, y1 = S * .265, S * .735
-    _rr(d, [x0, y0, x1, y1], r, w, col)
-    for i, frac in enumerate((.68, .42, .68)):
-        y = y0 + S * (.115 + i * .105)
-        xs = x0 + S * .075
-        d.rounded_rectangle([xs, y - w * .55, xs + (x1 - x0 - S * .15) * frac, y + w * .55],
-                            radius=w, fill=col)
+def _mark_josa(d, S, col, bg):
+    """조사 = 수사기관. 방패 안에 무궁화 — 경찰 공식 문양은 그대로 쓰지 않는다."""
+    import math
+    x0, x1 = S * .255, S * .745
+    y0, ym, y1 = S * .215, S * .560, S * .815
+    pts = [(x0, y0), (x1, y0)]
+    for i in range(41):                  # 오른쪽 어깨에서 아래 꼭짓점까지
+        t = i / 40
+        pts.append((x1 - (x1 - S * .5) * (t ** 2.1), ym + (y1 - ym) * t))
+    for i in range(41):
+        t = 1 - i / 40
+        pts.append((x0 + (S * .5 - x0) * (t ** 2.1), ym + (y1 - ym) * t))
+    d.polygon(pts, fill=col)
+    cx, cy, pr = S * .5, S * .455, S * .072      # 무궁화 다섯 잎
+    for k in range(5):
+        th = -math.pi / 2 + k * 2 * math.pi / 5
+        px, py = cx + math.cos(th) * pr * 1.02, cy + math.sin(th) * pr * 1.02
+        d.ellipse([px - pr, py - pr, px + pr, py + pr], fill=bg)
+    d.ellipse([cx - pr * .52, cy - pr * .52, cx + pr * .52, cy + pr * .52], fill=col)
 
 
-def _mark_sangdam(d, S, col):
-    """상담 = 주고받는 말. 말풍선 둘을 어긋나게 둔다 — 겹치지 않아 작게 줄여도 둘로 보인다."""
-    w = int(S * .042); r = int(S * .07)
-    _rr(d, [S * .215, S * .250, S * .615, S * .505], r, w, col)              # 묻는 쪽
-    d.rounded_rectangle([S * .385, S * .545, S * .785, S * .800], radius=r, fill=col)  # 답하는 쪽
+def _mark_sangdam(d, S, col, bg):
+    """상담 = 노트. 왼쪽에 링, 안에 적은 줄."""
+    x0, x1 = S * .255, S * .745
+    y0, y1 = S * .205, S * .795
+    r = int(S * .055)
+    d.rounded_rectangle([x0, y0, x1, y1], radius=r, fill=col)
+    d.rectangle([x0, y0 + r * .6, x0 + S * .105, y1 - r * .6], fill=bg)   # 링 자리
+    d.rounded_rectangle([x0, y0, x0 + S * .030, y1], radius=int(S * .015), fill=col)
+    for i in range(4):                                                     # 링 넷
+        cy = y0 + S * .085 + i * S * .145
+        d.rounded_rectangle([x0 + S * .012, cy - S * .020, x0 + S * .098, cy + S * .020],
+                            radius=int(S * .020), fill=col)
+    for i, frac in enumerate((1.0, 1.0, .62)):                             # 적은 줄
+        y = y0 + S * .145 + i * S * .145
+        xs = x0 + S * .155
+        d.rounded_rectangle([xs, y - S * .021, xs + (x1 - xs - S * .055) * frac, y + S * .021],
+                            radius=int(S * .021), fill=bg)
 
 
 MARK = {"gijil": _mark_gijil, "josa": _mark_josa, "sangdam": _mark_sangdam}
