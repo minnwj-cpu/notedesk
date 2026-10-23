@@ -369,7 +369,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.17</span></div>
+    <div class="brand"><b>상담노트</b><span>Consult Desk · 9.18</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">상담팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -1111,79 +1111,210 @@ function promoteTodo(n){
       await put("todos",S.caseId,S.todos); await put("notes",S.caseId,S.notes); renderNotes(); renderFollow(); counts(); toast("후속에 올렸습니다"); } });
 }
 
-/* ══ 녹음 — 마이크가 열리면 MediaRecorder 로, 안 열리면 이유를 보인다 ═══ */
-const REC={on:false, external:false, mr:null, stream:null, id:null, start:0, n:0, mime:"", timer:null, err:null, errName:"", playUrl:{}};
+/* ══ 녹음 ═══════════════════════════════════════════════════════════
+   아이패드는 다른 앱으로 넘어가면 웹 앱을 재우고 마이크를 끊는다. 웹에는 이를
+   막을 방법이 없다(네이티브 앱의 배경 녹음 권한이 웹에는 없다). 그래서
+   (1) 녹음 중에는 화면이 꺼지지 않게 붙들고
+   (2) 끊긴 것을 알아채 돌아오는 즉시 「다음 토막」으로 이어 받는다.
+   토막마다 파일이 따로다 — 토막을 하나로 붙이면 mp4 머리말이 겹쳐 재생이 깨진다.
+   노트의 ● 시각은 그 토막 안에서의 위치이므로 자리를 비운 시간이 섞이지 않는다. */
+const REC={on:false, want:false, external:false, mr:null, stream:null, id:null, start:0,
+           n:0, mime:"", timer:null, err:null, errName:"", playUrl:{},
+           wake:null, session:null, part:1, brokeAt:0, gapMs:0, resuming:false};
 function recDiag(){ let framed=true; try{ framed=(window.top!==window.self); }catch(e){ framed=true; } return {framed, href:location.href}; }
 async function recMeta(id){ return (await get("recmeta",id))||null; }
 async function recMetaSave(fin){
-  const m={id:REC.id, caseId:S.caseId, start:REC.start, end:fin?Date.now():null, n:REC.n, mime:REC.mime, dur:Math.round((Date.now()-REC.start)/1000), fin:!!fin, external:!!REC.external};
+  /* 조각 수는 되돌아가면 안 된다 — 마지막 조각이 저장되는 사이에 「끝났다」가 먼저
+     적히면 n 이 0 으로 덮여 내려받기가 빈 파일이 된다(2026-10-23 실측). */
+  let prev={}; try{ prev=(await get("recmeta",REC.id))||{}; }catch(e){}
+  const m={...prev, id:REC.id, caseId:S.caseId, start:REC.start,
+           end:fin?Date.now():(prev.end||null), n:Math.max(prev.n||0, REC.n||0),
+           mime:REC.mime, dur:Math.round((Date.now()-REC.start)/1000), fin:!!fin||!!prev.fin,
+           external:!!REC.external, session:REC.session, part:REC.part, gapMs:REC.gapMs||0};
   await put("recmeta",REC.id,m); return m;
 }
+/* 마지막 조각이 저장소에 들어간 뒤에 「끝남」을 못박는다 — 먼저 적으면 조각 쓰기가 덮는다 */
+async function recFinalize(segId){
+  try{
+    const m=(await get("recmeta",segId))||null; if(!m) return;
+    const end=m.end||Date.now();
+    await put("recmeta",segId,{...m, fin:true, end, dur:Math.max(m.dur||0, Math.round((end-m.start)/1000))});
+    renderAudio();
+  }catch(e){ console.error(e); }
+}
 function recFail(msg,name){ REC.err=msg; REC.errName=name||""; renderAudio(); toast(msg,6000); }
-/* 앱 밖 녹음(아이패드 음성 메모)과 맞추기 — 소리는 안 담고 시각만 잰다. 노트 줄의 ● 시각이 그 파일의 위치가 된다 */
+
+/* 화면이 꺼지면 그것만으로도 녹음이 끊긴다 — 녹음 중에는 붙들어 둔다 */
+async function recWake(on){
+  try{
+    if(on){ if(!REC.wake&&navigator.wakeLock) REC.wake=await navigator.wakeLock.request("screen"); }
+    else if(REC.wake){ await REC.wake.release(); REC.wake=null; }
+  }catch(e){ REC.wake=null; }
+}
+
+/* 앱 밖 녹음(아이패드 음성 메모)과 맞추기 — 소리는 안 담고 시각만 잰다.
+   음성 메모는 배경에서도 계속 돌아가므로, 다른 앱을 오가야 하면 이 쪽이 안전하다 */
 function recStartExternal(){
   if(REC.on) return;
-  REC.on=true; REC.external=true; REC.mr=null; REC.stream=null; REC.id="x"+Date.now().toString(36); REC.start=Date.now(); REC.n=0; REC.mime="external"; REC.err=null;
+  REC.on=true; REC.want=true; REC.external=true; REC.mr=null; REC.stream=null;
+  REC.id="x"+Date.now().toString(36); REC.start=Date.now(); REC.n=0; REC.mime="external";
+  REC.err=null; REC.session=REC.id; REC.part=1; REC.gapMs=0; REC.brokeAt=0;
   recMetaSave(false);
   $("#recBadge").hidden=false; $("#recDot").hidden=false;
   REC.timer=setInterval(()=>{ const s=mmss((Date.now()-REC.start)/1000); $("#recBadge").textContent="● "+s; const t=$("#recTime"); if(t) t.textContent=s; },500);
   renderAudio();
   toast("지금 음성 메모의 녹음을 시작하세요 — 노트 줄마다 ● 시각이 남습니다",4000);
 }
-async function recStart(){
-  if(REC.on) return;
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) return recFail("이 브라우저에는 마이크 API가 없습니다. 아이패드 「음성 메모」로 녹음해 주세요.");
-  if(!window.MediaRecorder) return recFail("이 브라우저는 녹음(MediaRecorder)을 지원하지 않습니다. 아이패드 「음성 메모」로 녹음해 주세요.");
-  let stream;
-  try{ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
+
+async function recOpen(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    recFail("이 브라우저에는 마이크 API가 없습니다. 아이패드 「음성 메모」로 녹음해 주세요."); return null; }
+  if(!window.MediaRecorder){
+    recFail("이 브라우저는 녹음(MediaRecorder)을 지원하지 않습니다. 아이패드 「음성 메모」로 녹음해 주세요."); return null; }
+  try{ return await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}}); }
   catch(e){
     const why=(e&&e.name)||"";
-    return recFail(why==="NotAllowedError"||why==="SecurityError"
+    recFail(why==="NotAllowedError"||why==="SecurityError"
       ?(recDiag().framed
         ?"마이크가 막혀 있습니다 — 이 화면은 claude.ai 틀 안에 떠 있어 iPad가 마이크를 열어 주지 않습니다. 「음성 메모와 맞추기」로 진행하세요."
         :"마이크 권한이 거부되어 있습니다 — 설정 › Safari › 마이크(홈 화면에 넣은 앱은 설정의 「상담노트」 항목)에서 허용한 뒤 다시 누르세요. 급하면 「음성 메모와 맞추기」.")
       :why==="NotFoundError"?"마이크를 찾지 못했습니다.":"마이크를 열지 못했습니다: "+(e.message||why), why);
+    return null;
   }
+}
+
+/* 한 토막을 시작한다. resumed 면 앞 토막에 이어지는 n부가 된다 */
+function recBegin(stream, resumed){
   const cand=["audio/mp4","audio/webm;codecs=opus","audio/webm",""];   /* 내려받기 허용 확장자가 mp4·webm 뿐이다 */
   const mime=cand.find(m=>!m||(MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(m)));
   let mr; try{ mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }
-  catch(e){ stream.getTracks().forEach(t=>t.stop()); return recFail("녹음기를 만들지 못했습니다: "+(e.message||e.name)); }
-  REC.on=true; REC.mr=mr; REC.stream=stream; REC.id="r"+Date.now().toString(36); REC.start=Date.now(); REC.n=0; REC.err=null;
+  catch(e){ stream.getTracks().forEach(t=>t.stop()); recFail("녹음기를 만들지 못했습니다: "+(e.message||e.name)); return false; }
+  REC.on=true; REC.mr=mr; REC.stream=stream; REC.err=null;
+  REC.id="r"+Date.now().toString(36); REC.start=Date.now(); REC.n=0;
   REC.mime=mr.mimeType||mime||"audio/mp4";
-  mr.ondataavailable=async ev=>{ if(!ev.data||!ev.data.size) return; try{ const buf=await ev.data.arrayBuffer(); REC.n++; await put("rec",REC.id+"#"+REC.n,buf); await recMetaSave(false); }catch(e){ console.error(e); } };
+  if(!resumed){ REC.session=REC.id; REC.part=1; REC.gapMs=0; }
+  else{ REC.part=(REC.part||1)+1; REC.gapMs=REC.brokeAt?Date.now()-REC.brokeAt:0; }
+  REC.brokeAt=0;
+  const segId=REC.id;                       /* 이 토막의 것 — 다음 토막으로 넘어가도 안 섞인다 */
+  mr.ondataavailable=async ev=>{ if(!ev.data||!ev.data.size) return;
+    try{
+      const buf=await ev.data.arrayBuffer();
+      let prev={}; try{ prev=(await get("recmeta",segId))||{}; }catch(e){}
+      const n=(prev.n||0)+1;
+      await put("rec",segId+"#"+n,buf);
+      await put("recmeta",segId,{...prev,id:segId,n});
+      if(REC.id===segId) REC.n=n;
+    }catch(e){ console.error(e); } };
   mr.onerror=e=>{ recFail("녹음 중 오류: "+((e&&e.error&&e.error.message)||"알 수 없음")); };
-  mr.onstop=async()=>{ try{ await recMetaSave(true); }catch(e){} REC.on=false; REC.mr=null; if(REC.stream){ REC.stream.getTracks().forEach(t=>t.stop()); REC.stream=null; }
-    clearInterval(REC.timer); $("#recBadge").hidden=true; $("#recDot").hidden=true; renderAudio(); toast("녹음을 저장했습니다 — 녹음 탭에서 내려받을 수 있습니다",3500); };
-  await recMetaSave(false);
+  mr.onstop=async()=>{
+    try{ await recMetaSave(true); }catch(e){}
+    setTimeout(()=>recFinalize(segId),1500);        /* 늦게 도착하는 마지막 조각 뒤에 한 번 더 */
+    REC.on=false; REC.mr=null;
+    if(REC.stream){ REC.stream.getTracks().forEach(t=>t.stop()); REC.stream=null; }
+    clearInterval(REC.timer);
+    if(REC.want){                      /* 내가 멈춘 게 아니다 — 아이패드가 끊은 것 */
+      REC.brokeAt=REC.brokeAt||Date.now();
+      renderAudio();
+      if(document.visibilityState==="visible") recResume();
+      else toast("녹음이 끊겼습니다 — 상담노트로 돌아오면 이어서 녹음합니다",6000);
+      return;
+    }
+    recWake(false);
+    $("#recBadge").hidden=true; $("#recDot").hidden=true; renderAudio();
+    toast("녹음을 저장했습니다 — 녹음 탭에서 내려받을 수 있습니다",3500);
+  };
+  /* 트랙이 조용히 죽는 경우도 있다 */
+  (stream.getAudioTracks()||[]).forEach(t=>{
+    t.onended=()=>{ if(REC.want&&REC.mr&&REC.mr.state!=="inactive"){ try{ REC.mr.stop(); }catch(e){} } };
+    t.onmute=()=>{ REC.brokeAt=REC.brokeAt||Date.now(); };
+  });
+  recMetaSave(false);
   mr.start(10000);
   $("#recBadge").hidden=false; $("#recDot").hidden=false;
+  clearInterval(REC.timer);
   REC.timer=setInterval(()=>{ const s=mmss((Date.now()-REC.start)/1000); $("#recBadge").textContent="● "+s; const t=$("#recTime"); if(t) t.textContent=s; },500);
   renderAudio();
-  toast("녹음 시작 — 의뢰인에게 녹음 사실을 알리고 진행하세요",3500);
+  return true;
 }
+
+async function recStart(){
+  if(REC.on) return;
+  const stream=await recOpen(); if(!stream) return;
+  REC.want=true; REC.external=false; REC.brokeAt=0;
+  if(!recBegin(stream,false)){ REC.want=false; return; }
+  recWake(true);
+  toast("녹음 시작 — 의뢰인에게 알리고, 다른 앱으로 넘어가면 끊깁니다",5000);
+}
+
+/* 돌아왔다 — 끊긴 자리에서 다음 토막으로 이어 받는다 */
+async function recResume(){
+  if(!REC.want||REC.external||REC.on||REC.resuming) return;
+  REC.resuming=true;
+  try{
+    const stream=await recOpen();
+    if(!stream){ REC.resuming=false; renderAudio(); return; }   /* 이유는 recOpen 이 띄운다 */
+    if(recBegin(stream,true)){
+      recWake(true);
+      const g=Math.round((REC.gapMs||0)/1000);
+      toast(g>1?`${mmss(g)} 끊겼다가 이어서 녹음합니다 (${REC.part}부)`:`이어서 녹음합니다 (${REC.part}부)`,4500);
+    }
+  }catch(e){ console.error(e); }
+  REC.resuming=false;
+}
+
 async function recStop(){
-  if(!REC.on) return;
+  if(!REC.on&&!REC.want) return;
+  REC.want=false;
   if(REC.external){
     try{ await recMetaSave(true); }catch(e){}
     REC.on=false; REC.external=false; clearInterval(REC.timer);
     $("#recBadge").hidden=true; $("#recDot").hidden=true; renderAudio();
     toast("표시를 끝냈습니다 — 음성 메모도 지금 멈추세요",3500); return;
   }
-  if(!REC.mr) return;
-  try{ REC.mr.state!=="inactive"&&REC.mr.stop(); }catch(e){ console.error(e); }
+  recWake(false);
+  if(REC.mr&&REC.mr.state!=="inactive"){ try{ REC.mr.stop(); }catch(e){ console.error(e); } return; }
+  REC.on=false; clearInterval(REC.timer);
+  $("#recBadge").hidden=true; $("#recDot").hidden=true; renderAudio();
 }
-async function recChunks(id){ const m=await recMeta(id); if(!m) return null; const parts=[]; for(let i=1;i<=m.n;i++){ const b=await get("rec",id+"#"+i); if(b) parts.push(b); } return {meta:m, blob:new Blob(parts,{type:m.mime||"audio/mp4"})}; }
+
+/* 다른 앱에 갔다 돌아오면 바로 이어 받는다. 화면 잠금도 같은 길로 들어온다 */
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible") { if(REC.want&&!REC.external) REC.brokeAt=REC.brokeAt||Date.now(); return; }
+  if(REC.want&&!REC.external){ if(!REC.on) recResume(); else recWake(true); }
+});
+window.addEventListener("focus",()=>{ if(REC.want&&!REC.external&&!REC.on) recResume(); });
+async function recChunks(id){
+  const m=await recMeta(id); if(!m) return null;
+  const parts=[];
+  /* 적힌 조각 수를 믿되, 그 뒤로도 실제로 저장된 것이 있으면 끝까지 가져온다 */
+  for(let i=1;;i++){
+    const b=await get("rec",id+"#"+i);
+    if(!b){ if(i>(m.n||0)) break; else continue; }
+    parts.push(b);
+    if(i>(m.n||0)+200) break;
+  }
+  return {meta:m, blob:new Blob(parts,{type:m.mime||"audio/mp4"})};
+}
 function recExt(mime){ mime=String(mime||""); if(mime.includes("webm")) return "webm"; return "mp4"; }
 async function renderAudio(){
   const box=$("#audioWrap"); if(!box) return;
   const c=cur();
   let rows=[]; try{ rows=(await all("recmeta")).map(r=>r.v).filter(m=>m&&m.caseId===S.caseId).sort((a,b)=>b.start-a.start); }catch(e){}
   const dg=recDiag();
+  const broke=REC.want&&!REC.on&&!REC.external;      /* 내가 멈춘 게 아닌데 꺼져 있다 */
   let h=`<div class="recbox">
-    <button class="recbtn ${REC.on?"on":""} ${REC.external?"ext":""}" id="recBtn">${REC.on?(REC.external?"표시 끝":"정지"):"녹음"}</button>
+    <button class="recbtn ${REC.on?"on":""} ${REC.external?"ext":""}" id="recBtn">${(REC.on||REC.want)?(REC.external?"표시 끝":"정지"):"녹음"}</button>
     <div class="rectime ${REC.on?"on":""}" id="recTime">${REC.on?mmss((Date.now()-REC.start)/1000):"00:00"}</div>
-    <div class="recmsg ${REC.err?"err":""}">${REC.err?esc(REC.err):(REC.on?(REC.external?"음성 메모와 맞추는 중입니다. 노트에 적는 줄마다 ● 시각이 남습니다 — 음성 메모 파일의 그 위치입니다.":"녹음 중입니다. 노트에 적는 줄마다 녹음 시각이 함께 남습니다."):"상담 녹음은 대화 당사자의 녹음이라 적법하지만, 시작 전에 의뢰인에게 알리세요. 앱 안 녹음이 막혀 있으면 아래 「음성 메모와 맞추기」를 쓰세요.")}</div>
-    ${REC.on?"":`<div class="recalt"><button class="btn" id="recExtBtn">음성 메모와 맞추기</button></div>`}
+    <div class="recmsg ${REC.err||broke?"err":""}">${
+      REC.err?esc(REC.err)
+      :broke?`다른 앱으로 넘어가 있는 동안 아이패드가 녹음을 끊었습니다. 지금 눌러 이어서 녹음하세요 — 앞 토막은 그대로 남아 있습니다.`
+      :REC.on?(REC.external
+        ?"음성 메모와 맞추는 중입니다. 노트에 적는 줄마다 ● 시각이 남습니다 — 음성 메모 파일의 그 위치입니다."
+        :`녹음 중입니다${REC.part>1?` (${REC.part}부)`:""}. 노트에 적는 줄마다 녹음 시각이 함께 남습니다.`)
+      :"상담 녹음은 대화 당사자의 녹음이라 적법하지만, 시작 전에 의뢰인에게 알리세요."}</div>
+    ${broke?`<div class="recalt"><button class="btn primary" id="recResumeBtn">이어서 녹음</button></div>`:""}
+    ${(REC.on||REC.want)?"":`<div class="recalt"><button class="btn" id="recExtBtn">음성 메모와 맞추기</button></div>`}
+    ${(REC.on&&!REC.external)?`<div class="recdiag"><b>다른 앱을 봐야 하면</b> 화면 나누기로 상담노트를 옆에 띄워 두세요. 상담노트가 화면에서 사라지는 순간 아이패드가 마이크를 끊습니다(웹 앱은 배경에서 녹음할 수 없습니다). 자리를 오래 비울 일이 있으면 「음성 메모와 맞추기」가 안전합니다.</div>`:""}
     ${REC.err&&dg.framed?`<div class="recdiag"><b>왜 막혔나</b> · ${esc(REC.errName||"")} · ${dg.framed?"이 화면은 claude.ai 틀(iframe) 안에 있습니다":"이 화면은 틀 밖(최상위)입니다"}.<br>
       틀 밖에서 직접 열면 마이크가 열릴 수 있습니다 — 아래 주소를 복사해 사파리 주소창에 붙여 넣어 보세요.
       <a href="${esc(dg.href)}" target="_blank" rel="noopener" style="color:var(--pen)">새 창으로 열기</a>
@@ -1192,15 +1323,17 @@ async function renderAudio(){
   if(rows.length){
     h+=`<div class="sectionhd"><h2>녹음</h2><span class="c">${rows.length}건</span></div><div class="reclist2">`+
       rows.map(m=>{ const marks=S.notes.filter(n=>n.rec&&n.rec.id===m.id); const cur_=REC.on&&REC.id===m.id;
-        return `<div class="recrow" data-rid="${esc(m.id)}"><div><div class="t">${esc(kdate(new Date(m.start).toISOString().slice(0,10)))} ${hhmm(m.start)}${m.external?" · 음성 메모와 맞춤":""}${cur_?" · 진행 중":m.fin?"":" · 중단됨"}</div>
+        return `<div class="recrow" data-rid="${esc(m.id)}"><div><div class="t">${esc(kdate(new Date(m.start).toISOString().slice(0,10)))} ${hhmm(m.start)}${(m.part||1)>1?` · ${m.part}부`:""}${m.external?" · 음성 메모와 맞춤":""}${cur_?" · 진행 중":m.fin?"":" · 중단됨"}</div>
+          ${m.gapMs>1500?`<div class="m" style="color:var(--seal)">⟂ 앞 토막 뒤 ${esc(mmss(m.gapMs/1000))} 끊김</div>`:""}
           <div class="m">${mmss(m.dur||0)}${m.external?" · 소리는 음성 메모 앱에":` · ${m.n||0}조각 · ${esc(m.mime||"")}`}</div></div>
           <div class="acts">${cur_?"":(m.external?`<button class="btn ghost sm" data-rdel="${esc(m.id)}">×</button>`:`<button class="btn sm" data-play="${esc(m.id)}">듣기</button><button class="btn sm primary" data-dl="${esc(m.id)}">내려받기</button><button class="btn ghost sm" data-rdel="${esc(m.id)}">×</button>`)}</div>
           ${marks.length?`<div class="marks">${marks.map(n=>`<div><span>${mmss(n.rec.off)}</span>${esc(n.who)} · ${esc(n.tx.slice(0,80))}</div>`).join("")}</div>`:""}
           <div class="playwrap" id="play-${esc(m.id)}"></div></div>`; }).join("")+`</div>`;
   }
   box.innerHTML=h;
-  $("#recBtn").onclick=()=>REC.on?recStop():recStart();
+  $("#recBtn").onclick=()=>(REC.on||REC.want)?recStop():recStart();
   const xb=$("#recExtBtn"); if(xb) xb.onclick=recStartExternal;
+  const rb=$("#recResumeBtn"); if(rb) rb.onclick=recResume;
   box.querySelectorAll("[data-play]").forEach(b=>b.onclick=async()=>{
     const id=b.dataset.play; const r=await recChunks(id); if(!r){ toast("녹음을 찾지 못했습니다"); return; }
     if(r.blob.size>40*1048576){ toast("40MB가 넘어 앱 안에서는 재생하지 않습니다 — 내려받아 들으세요",4000); return; }
@@ -1314,7 +1447,7 @@ function noteMarkdown(c,hl,recs){
   L.push("");
   const follow=[...(ck.후속||[]).map(i=>({tx:i.tx,due:i.due,done:(S.checks[i.id]||{}).done})),...S.todos];
   if(follow.length){ L.push("## 상담 뒤에 할 일"); L.push(""); follow.forEach(t=>L.push(`- [${t.done?"x":" "}] ${t.tx}${t.due?`  —  ${kdate(t.due)}`:""}`)); L.push(""); }
-  if((recs||[]).length){ L.push("## 녹음"); L.push(""); recs.forEach(m=>L.push(`- ${kdate(new Date(m.start).toISOString().slice(0,10))} ${hhmm(m.start)} · ${mmss(m.dur||0)} · ${m.external?"음성 메모와 맞춤 (소리는 음성 메모 파일)":(m.mime||"")}${m.fin?"":" · 중단됨"}`)); L.push(""); }
+  if((recs||[]).length){ L.push("## 녹음"); L.push(""); recs.forEach(m=>L.push(`- ${kdate(new Date(m.start).toISOString().slice(0,10))} ${hhmm(m.start)}${(m.part||1)>1?` ${m.part}부`:""} · ${mmss(m.dur||0)} · ${m.external?"음성 메모와 맞춤 (소리는 음성 메모 파일)":(m.mime||"")}${m.gapMs>1500?` · 앞 토막 뒤 ${mmss(m.gapMs/1000)} 끊김`:""}${m.fin?"":" · 중단됨"}`)); L.push(""); }
   if(hl&&Object.keys(hl).length){ L.push("## 형광펜 표시한 면"); L.push(""); Object.keys(hl).forEach(n=>L.push(`- ${n}: ${hl[n].join(", ")}면`)); L.push(""); }
   if(S.docs.length){ L.push("## 가져간 자료"); L.push(""); S.docs.forEach(d=>L.push(`- ${d.name} (${d.pages}면)`)); }
   return L.join("\n");
