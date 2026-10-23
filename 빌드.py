@@ -203,22 +203,16 @@ def _mark_josa(d, S, col, bg):
 
 
 def _mark_sangdam(d, S, col, bg):
-    """상담 = 노트. 왼쪽에 링, 안에 적은 줄."""
-    x0, x1 = S * .255, S * .745
-    y0, y1 = S * .205, S * .795
-    r = int(S * .055)
-    d.rounded_rectangle([x0, y0, x1, y1], radius=r, fill=col)
-    d.rectangle([x0, y0 + r * .6, x0 + S * .105, y1 - r * .6], fill=bg)   # 링 자리
-    d.rounded_rectangle([x0, y0, x0 + S * .030, y1], radius=int(S * .015), fill=col)
-    for i in range(4):                                                     # 링 넷
-        cy = y0 + S * .085 + i * S * .145
-        d.rounded_rectangle([x0 + S * .012, cy - S * .020, x0 + S * .098, cy + S * .020],
-                            radius=int(S * .020), fill=col)
-    for i, frac in enumerate((1.0, 1.0, .62)):                             # 적은 줄
-        y = y0 + S * .145 + i * S * .145
-        xs = x0 + S * .155
-        d.rounded_rectangle([xs, y - S * .021, xs + (x1 - xs - S * .055) * frac, y + S * .021],
-                            radius=int(S * .021), fill=bg)
+    """상담 = 펼친 노트. 두 쪽이 펼쳐지고 가운데가 접힌 자리."""
+    r = int(S * .050)
+    d.rounded_rectangle([S * .185, S * .265, S * .478, S * .760], radius=r, fill=col)
+    d.rounded_rectangle([S * .522, S * .265, S * .815, S * .760], radius=r, fill=col)
+    d.rounded_rectangle([S * .478, S * .300, S * .522, S * .790], radius=int(S * .022), fill=col)
+    for x0, x1 in ((.240, .430), (.570, .760)):                            # 양쪽 쪽에 적은 줄
+        for i, frac in enumerate((1.0, 1.0, .55)):
+            y = S * (.370 + i * .110)
+            d.rounded_rectangle([S * x0, y, S * x0 + S * (x1 - x0) * frac, y + S * .040],
+                                radius=int(S * .020), fill=bg)
 
 
 MARK = {"gijil": _mark_gijil, "josa": _mark_josa, "sangdam": _mark_sangdam}
