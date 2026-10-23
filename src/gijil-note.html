@@ -368,7 +368,7 @@ button{cursor:pointer;background:none;border:none;padding:0}
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>기일노트</b><span>Hearing Desk · 9.10</span></div>
+    <div class="brand"><b>기일노트</b><span>Hearing Desk · 10.23</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">사건을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -593,11 +593,20 @@ async function importPack(file){
   const have=new Set(docs.map(d=>d.uid));
   const list=pack.docs||[];
   const totalPages=list.reduce((s,d)=>s+(d.pages||0),0)||1;
-  let done=0, added=0; const replaced=[];
+  let done=0, added=0, refreshed=0; const replaced=[];
 
   for(const d of list){
     const u=d.sha?(cid+"/"+d.sha):(cid+"/"+pack.hearing.date+"/"+d.id);
-    if(have.has(u)){ done+=d.pages||0; setProg(.03+.94*(done/totalPages)); continue; }
+    if(have.has(u)){
+      /* 면 이미지는 그대로 두고 목록 정보만 새 팩 것으로 — 빌더가 목차(서면/증거/첨부 구분)를
+         고쳐 다시 구운 팩을 열면 왼쪽 목록에 반영되게(2026-10-23 전호석 낱개 서증) */
+      const cur=docs.find(x=>x.uid===u);
+      if(cur&&JSON.stringify(cur.toc||[])!==JSON.stringify(d.toc||[])){
+        Object.assign(cur,{name:d.name,toc:d.toc||[],side:d.side||cur.side||null,role:d.role||cur.role||null});
+        refreshed++;
+      }
+      done+=d.pages||0; setProg(.03+.94*(done/totalPages)); continue;
+    }
     /* 같은 원본 파일의 옛 판이 있으면 새 판이 대신한다 — 통합기록을 다시 내려받은 경우.
        통합기록은 뒤에 붙어 자라므로 겹치는 면의 형광펜은 새 판으로 옮긴다. */
     for(const old of docs.filter(x=>x.uid!==u&&((x.src&&d.src&&x.src===d.src)||(!x.src&&x.name===d.name&&x.pages===d.pages)))){
@@ -638,8 +647,9 @@ async function importPack(file){
   await put("cases",cid,{...meta,docs,exIdx});
   setProg(1);
   await loadCases(cid);
-  if(added) goTab("rec"); else if(pack.summary!=null) goTab("sum");
+  if(added||refreshed) goTab("rec"); else if(pack.summary!=null) goTab("sum");
   toast(added?`${added}건 · ${totalPages}면 들어왔습니다`+(replaced.length?` · 옛 판 ${replaced.length}건을 새 판으로 바꿨습니다`:"")+(pack.summary!=null?" · 요약 갱신":"")
+             :refreshed?`기록 목록 ${refreshed}건을 새로 나눴습니다`+(pack.summary!=null?" · 요약 갱신":"")
              :(pack.summary!=null?"요약을 갱신했습니다":`새 기록 없음 (${list.length}건 모두 이미 있음)`),4200);
 }
 async function supersede(old,nu,npages){
