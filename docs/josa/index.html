@@ -159,8 +159,29 @@ button{cursor:pointer;background:none;border:none;padding:0}
 .main{flex:1;min-height:0;display:flex;overflow:hidden}
 .pane{display:none;flex:1;min-width:0;min-height:0}
 .pane.on{display:flex}
-.cols{flex:1;overflow-y:auto;padding:16px;min-height:0;-webkit-overflow-scrolling:touch}
+.cols{flex:1;overflow-y:auto;padding:16px;min-height:0;-webkit-overflow-scrolling:touch;position:relative}
 .wrap{max-width:960px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+/* 목차 사이드바 — 한눈에·브리핑. 자료 탭 사이드바와 같은 결로 */
+.toc{width:210px;flex:0 0 210px;border-right:1px solid var(--line);background:var(--surface);
+  overflow-y:auto;min-height:0;padding:8px 0 24px;-webkit-overflow-scrolling:touch}
+.toc:empty{display:none}
+.toc .h{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:8px 14px 6px}
+.toc button{display:block;width:100%;text-align:left;padding:7px 14px;font-size:13px;line-height:1.45;
+  color:var(--ink-2);border-left:3px solid transparent;word-break:keep-all;overflow-wrap:anywhere}
+.toc button:hover{background:var(--surface-2)}
+.toc button.here{border-left-color:var(--brand);background:var(--brand-soft);color:var(--ink);font-weight:600}
+.toc button.d2{padding-left:24px}
+.toc button.d3{padding-left:36px;font-size:12.5px;color:var(--mute)}
+@media (max-width:900px){
+  #pane-glance.on,#pane-brief.on{flex-direction:column}
+  .toc{width:auto;flex:0 0 auto;border-right:none;border-bottom:1px solid var(--line);
+    display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;padding:7px 10px}
+  .toc .h{display:none}
+  .toc button{width:auto;white-space:nowrap;border-left:none;border-radius:100px;padding:6px 12px;
+    min-height:32px;background:var(--surface-2);border:1px solid var(--line-2);font-size:12.5px}
+  .toc button.d2,.toc button.d3{padding-left:12px}
+  .toc button.here{border-color:transparent}
+}
 .sectionhd{display:flex;align-items:baseline;gap:10px;margin:6px 0 0}
 .sectionhd h2{font-family:var(--serif);font-size:17px;font-weight:700;margin:0}
 .sectionhd .c{font-family:var(--mono);font-size:12px;color:var(--mute)}
@@ -392,7 +413,7 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
 
 <div class="app">
   <header class="top">
-    <div class="brand"><b>조사노트</b><span>Statement Desk · 1.1</span></div>
+    <div class="brand"><b>조사노트</b><span>Statement Desk · 1.2</span></div>
     <div class="caseline">
       <span class="nm" id="caseName">조사팩을 불러오세요</span>
       <span class="caseno" id="caseNo"></span>
@@ -419,8 +440,8 @@ a.pref:hover,button.pref:hover{color:var(--seal);border-bottom-color:var(--seal)
   </nav>
 
   <div class="main">
-    <section class="pane on" id="pane-glance"><div class="cols"><div class="wrap" id="glanceWrap"></div></div></section>
-    <section class="pane" id="pane-brief"><div class="cols"><div class="wrap" id="briefWrap"></div></div></section>
+    <section class="pane on" id="pane-glance"><aside class="toc" id="tocGlance"></aside><div class="cols"><div class="wrap" id="glanceWrap"></div></div></section>
+    <section class="pane" id="pane-brief"><aside class="toc" id="tocBrief"></aside><div class="cols"><div class="wrap" id="briefWrap"></div></div></section>
 
     <section class="pane" id="pane-qa">
       <div class="qa" id="qaBox">
@@ -687,6 +708,45 @@ function pageBtn(doc,p,label){ const u=S.keys[doc]; if(!u) return `<span class="
   return `<button class="pg" data-uid="${esc(u)}" data-p="${p}">${esc(label||doc+" "+p+"면")}</button>`; }
 function bindRefs(box){ box.querySelectorAll("[data-uid][data-p]").forEach(b=>b.onclick=()=>{ goTab("rec"); openDoc(b.dataset.uid,+b.dataset.p); }); }
 
+/* ══ 목차 사이드바 ═══════════════════════════════════════════════
+   따로 적어 두지 않고 화면에 그려진 제목을 그대로 읽어 만든다 —
+   내용이 바뀌면 목차도 저절로 맞는다. */
+function buildToc(tocSel, wrapSel, headSel, topLabel){
+  const toc=$(tocSel), wrap=$(wrapSel); if(!toc||!wrap) return;
+  const cols=wrap.closest(".cols"); if(!cols) return;
+  const hs=[...wrap.querySelectorAll(headSel)];
+  if(hs.length<2){ toc.innerHTML=""; cols.onscroll=null; return; }   /* 한두 개면 목차가 의미 없다 */
+
+  /* .cols 가 position:relative 라 제목의 offsetTop 이 곧 그 제목까지의 스크롤 양이다.
+     화면 좌표로 재면 숨은 탭·스크롤 중에 어긋난다(2026-10-25 실측). */
+  const at=(i)=>Math.max(0,hs[i].offsetTop-14);
+  /* 끝 절도 맨 위까지 올라오도록 본문 뒤에 상자 높이만큼 여백을 둔다 —
+     vh 로 주면 머리줄·탭을 뺀 상자 높이와 달라 끝 항목이 조금 모자란다(2026-10-25 실측) */
+  wrap.style.paddingBottom=Math.max(120,cols.clientHeight-110)+"px";
+
+  toc.innerHTML=`<div class="h">목차</div>`
+    +(topLabel?`<button data-top="1">${esc(topLabel)}</button>`:"")
+    +hs.map((h,i)=>{ const lv=h.tagName==="H1"?1:h.tagName==="H3"?3:2;
+      return `<button class="d${lv}" data-i="${i}">${esc(h.textContent.trim().slice(0,38))}</button>`; }).join("");
+  const btns=[...toc.querySelectorAll("button")];
+
+  const mark=()=>{
+    const y=cols.scrollTop+30;
+    let cur=topLabel?-1:0;
+    for(let i=0;i<hs.length;i++) if(hs[i].offsetTop<=y) cur=i;
+    btns.forEach(b=>b.classList.toggle("here", b.dataset.top?cur<0:(+b.dataset.i===cur)));
+    const on=toc.querySelector("button.here");
+    if(on&&innerWidth>900){                      /* 따라 올리는 것은 목차 안에서만 */
+      const r=on.getBoundingClientRect(), t=toc.getBoundingClientRect();
+      if(r.top<t.top+8) toc.scrollTop+=r.top-t.top-8;
+      else if(r.bottom>t.bottom-8) toc.scrollTop+=r.bottom-t.bottom+8;
+    }
+  };
+  btns.forEach(b=>b.onclick=()=>{ cols.scrollTop=b.dataset.top?0:at(+b.dataset.i); mark(); });
+  cols.onscroll=mark;
+  mark();
+}
+
 /* ══ 한눈에 ═══════════════════════════════════════════════════════ */
 function renderGlance(){
   const box=$("#glanceWrap"), c=cur(), g=c.glance||{}, ex=c.exam||{}, ck=c.checks||{};
@@ -720,6 +780,7 @@ function renderGlance(){
   h+=checklistHtml("수사관에게 요청할 것",ck.요청,"말했다");
   box.innerHTML=h||`<div class="card"><div class="bd"><div class="empty"><h2>한눈에 볼 것이 없습니다</h2><p>조사팩을 열면 조사팩.json 의 「한눈에」가 여기 뜹니다.</p></div></div></div>`;
   bindRefs(box); bindChecks(box);
+  buildToc("#tocGlance","#glanceWrap",".sectionhd h2","조사 정보");
 }
 function checklistHtml(title,items,verb){
   if(!(items||[]).length) return "";
@@ -764,6 +825,7 @@ function renderBrief(){
   box.innerHTML=c.briefing?`<div class="sum">${mdToHtml(c.briefing)}<div class="meta">브리핑 · ${esc((c.briefingAt||"").replace("T"," "))}</div></div>`
     :`<div class="card"><div class="bd"><div class="empty"><h2>브리핑이 없습니다</h2><p>조사팩.json 의 「브리핑」에 조사대비안내 md 를 적어 두면 여기 뜹니다.</p></div></div></div>`;
   bindRefs(box);
+  buildToc("#tocBrief","#briefWrap",".sum h1,.sum h2,.sum h3",null);
 }
 
 /* ══ 문답 ═════════════════════════════════════════════════════════ */
@@ -1144,6 +1206,9 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".pane").forEach(p=>p.classList.toggle("on",p.id==="pane-"+t.dataset.t));
   if(t.dataset.t==="note") setTimeout(()=>{ const b=$("#noteScroll"); b.scrollTop=b.scrollHeight; },30);
   if(t.dataset.t==="rec"&&S.doc&&ZOOMS[S.zoomIdx]==="fit") setTimeout(applyZoom,30);
+  /* 숨어 있는 동안에는 자리를 잴 수 없다(전부 0) — 보이고 나서 목차를 다시 맞춘다 */
+  if(t.dataset.t==="glance") setTimeout(()=>buildToc("#tocGlance","#glanceWrap",".sectionhd h2","조사 정보"),30);
+  if(t.dataset.t==="brief") setTimeout(()=>buildToc("#tocBrief","#briefWrap",".sum h1,.sum h2,.sum h3",null),30);
 });
 function counts(){
   const c=cur(), qa=c.qa||[], ck=c.checks||{};

@@ -117,8 +117,6 @@ button{cursor:pointer;background:none;border:none;padding:0}
 .toc{width:210px;flex:0 0 210px;border-right:1px solid var(--line);background:var(--surface);
   overflow-y:auto;min-height:0;padding:8px 0 24px;-webkit-overflow-scrolling:touch}
 .toc:empty{display:none}
-/* 마지막 항목도 맨 위까지 올라오게 — 없으면 끝 절은 눌러도 가운데에 머문다 */
-#pane-glance .wrap,#pane-report .wrap{padding-bottom:48vh}
 .toc .h{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--mute-2);font-weight:600;padding:8px 14px 6px}
 .toc button{display:block;width:100%;text-align:left;padding:7px 14px;font-size:13px;line-height:1.45;
   color:var(--ink-2);border-left:3px solid transparent;word-break:keep-all;overflow-wrap:anywhere}
@@ -790,6 +788,9 @@ function buildToc(tocSel, wrapSel, headSel, topLabel){
   /* .cols 가 position:relative 라 제목의 offsetTop 이 곧 그 제목까지의 스크롤 양이다.
      화면 좌표로 재면 숨은 탭·스크롤 중에 어긋난다(2026-10-25 실측). */
   const at=(i)=>Math.max(0,hs[i].offsetTop-14);
+  /* 끝 절도 맨 위까지 올라오도록 본문 뒤에 상자 높이만큼 여백을 둔다 —
+     vh 로 주면 머리줄·탭을 뺀 상자 높이와 달라 끝 항목이 조금 모자란다(2026-10-25 실측) */
+  wrap.style.paddingBottom=Math.max(120,cols.clientHeight-110)+"px";
 
   toc.innerHTML=`<div class="h">목차</div>`
     +(topLabel?`<button data-top="1">${esc(topLabel)}</button>`:"")
